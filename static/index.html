@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Agent Orchestrator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div id="login-screen" class="glass-panel">
+        <div class="glow-orb"></div>
+        <h1>Orchestrator Login</h1>
+        <p>Enter your MCP Auth Token to access the dashboard.</p>
+        <div class="input-group">
+            <input type="password" id="auth-token" placeholder="Bearer Token" />
+            <button id="login-btn">Access Brain</button>
+        </div>
+        <p id="login-error" class="error-msg hidden">Invalid token or server offline.</p>
+    </div>
+
+    <div id="dashboard" class="hidden">
+        <aside class="sidebar glass-panel">
+            <div class="brand">
+                <div class="logo"></div>
+                <h2>Orchestrator</h2>
+            </div>
+            <nav>
+                <button class="nav-btn active" data-tab="setup">Setup Guide</button>
+                <button class="nav-btn" data-tab="credentials">API Credentials</button>
+                <button class="nav-btn" data-tab="tasks">Task Monitor</button>
+            </nav>
+            <div class="user-info">
+                <button id="logout-btn" class="secondary-btn">Disconnect</button>
+            </div>
+        </aside>
+
+        <main class="content">
+            <!-- Setup Guide Tab -->
+            <section id="setup-tab" class="tab-content active glass-panel">
+                <h2>Setup Guide</h2>
+                <p>Connect your AI coding agents to this Orchestrator to start collaborating.</p>
+                
+                <div class="tool-grid">
+                    <div class="tool-card active" data-target="setup-cursor">
+                        <div class="tool-icon">C</div>
+                        <h3>Cursor</h3>
+                    </div>
+                    <div class="tool-card" data-target="setup-antigravity">
+                        <div class="tool-icon" style="background: linear-gradient(135deg, #10b981, #059669);">A</div>
+                        <h3>Antigravity</h3>
+                    </div>
+                    <div class="tool-card" data-target="setup-kiro">
+                        <div class="tool-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);">K</div>
+                        <h3>Kiro</h3>
+                    </div>
+                    <div class="tool-card" data-target="setup-claude">
+                        <div class="tool-icon" style="background: linear-gradient(135deg, #d946ef, #a21caf);">CD</div>
+                        <h3>Claude Desktop</h3>
+                    </div>
+                </div>
+
+                <div class="setup-panels">
+                    <!-- Cursor Setup -->
+                    <div id="setup-cursor" class="setup-panel active card">
+                        <div class="setup-header">
+                            <h3>Cursor Configuration</h3>
+                            <button class="secondary-btn copy-btn" data-copy="cursor-code">Copy JSON</button>
+                        </div>
+                        <p>Open Cursor > Settings > Features > MCP. Add a new server and use this JSON configuration:</p>
+                        <pre><code id="cursor-code">{
+  "mcpServers": {
+    "Orchestrator": {
+      "command": "node",
+      "args": ["@modelcontextprotocol/client-sse", "http://localhost:8000/mcp"],
+      "env": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+
+                    <!-- Antigravity Setup -->
+                    <div id="setup-antigravity" class="setup-panel card hidden">
+                        <div class="setup-header">
+                            <h3>Antigravity Configuration</h3>
+                            <button class="secondary-btn copy-btn" data-copy="ag-code">Copy JSON</button>
+                        </div>
+                        <p>Add the following configuration to your Antigravity MCP settings file (`mcp_config.json`):</p>
+                        <pre><code id="ag-code">{
+  "mcpServers": {
+    "orchestrator": {
+      "command": "node",
+      "args": ["@modelcontextprotocol/client-sse", "http://localhost:8000/mcp"],
+      "env": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+
+                    <!-- Kiro Setup -->
+                    <div id="setup-kiro" class="setup-panel card hidden">
+                        <div class="setup-header">
+                            <h3>Kiro Configuration</h3>
+                            <button class="secondary-btn copy-btn" data-copy="kiro-code">Copy Command</button>
+                        </div>
+                        <p>In Kiro, you can add an SSE MCP server directly via CLI or settings. Use this configuration:</p>
+                        <pre><code id="kiro-code">{
+  "orchestrator": {
+    "type": "sse",
+    "url": "http://localhost:8000/mcp",
+    "headers": {
+      "Authorization": "Bearer YOUR_TOKEN"
+    }
+  }
+}</code></pre>
+                    </div>
+
+                    <!-- Claude Desktop Setup -->
+                    <div id="setup-claude" class="setup-panel card hidden">
+                        <div class="setup-header">
+                            <h3>Claude Desktop Configuration</h3>
+                            <button class="secondary-btn copy-btn" data-copy="claude-code">Copy JSON</button>
+                        </div>
+                        <p>Edit your `claude_desktop_config.json` file to include the orchestrator:</p>
+                        <pre><code id="claude-code">{
+  "mcpServers": {
+    "shared_brain": {
+      "command": "node",
+      "args": ["@modelcontextprotocol/client-sse", "http://localhost:8000/mcp"],
+      "env": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- API Credentials Tab -->
+            <section id="credentials-tab" class="tab-content glass-panel">
+                <div class="header-action">
+                    <h2>API Credentials</h2>
+                    <button id="show-add-cred-modal" class="primary-btn">+ Add Key</button>
+                </div>
+                <div class="table-container">
+                    <table id="cred-table">
+                        <thead>
+                            <tr>
+                                <th>Tool Name</th>
+                                <th>Account Label</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Tasks Tab -->
+            <section id="tasks-tab" class="tab-content glass-panel">
+                <div class="header-action">
+                    <h2>Task Monitor</h2>
+                    <button id="show-add-task-modal" class="primary-btn">+ Create Task</button>
+                </div>
+                <div class="table-container">
+                    <table id="task-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Project</th>
+                                <th>Title</th>
+                                <th>Status</th>
+                                <th>Assigned To</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="add-cred-modal" class="modal hidden">
+        <div class="modal-content glass-panel">
+            <h3>Add API Credential</h3>
+            <form id="add-cred-form">
+                <div class="input-group">
+                    <label>Tool Name</label>
+                    <input type="text" id="cred-tool" placeholder="e.g. claude" required>
+                </div>
+                <div class="input-group">
+                    <label>Account Label</label>
+                    <input type="text" id="cred-label" placeholder="e.g. primary-tier3" required>
+                </div>
+                <div class="input-group">
+                    <label>API Key</label>
+                    <input type="password" id="cred-key" placeholder="sk-..." required>
+                </div>
+                <div class="input-group">
+                    <label>Tool Type</label>
+                    <select id="cred-type">
+                        <option value="api_based">API Based (Cloud)</option>
+                        <option value="ide_native">IDE Native (Local/Editor)</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="cancel-btn modal-close">Cancel</button>
+                    <button type="submit" class="primary-btn">Save Credential</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="add-task-modal" class="modal hidden">
+        <div class="modal-content glass-panel">
+            <h3>Create New Task</h3>
+            <form id="add-task-form">
+                <div class="input-group">
+                    <label>Project ID</label>
+                    <input type="text" id="task-project" placeholder="e.g. ecommerce-v1" required>
+                </div>
+                <div class="input-group">
+                    <label>Title</label>
+                    <input type="text" id="task-title" placeholder="e.g. Build Login Screen" required>
+                </div>
+                <div class="input-group">
+                    <label>Category (Target Tool)</label>
+                    <input type="text" id="task-category" placeholder="e.g. frontend" required>
+                </div>
+                <div class="input-group">
+                    <label>Description & References</label>
+                    <textarea id="task-desc" placeholder="Paste GitHub links, instructions, and spec links here..." rows="4"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="cancel-btn modal-close">Cancel</button>
+                    <button type="submit" class="primary-btn">Dispatch Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>

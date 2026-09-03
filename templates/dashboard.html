@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Agent Orchestrator — Live Dashboard</title>
+  <style>
+    :root {
+      --bg-body: #0f172a;
+      --bg-surface: #1e293b;
+      --bg-surface-elevated: #283548;
+      --bg-card: #182234;
+      --border-color: #334155;
+      --border-subtle: #293548;
+      
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+
+      /* Status Colors */
+      --status-ready: #38bdf8;
+      --status-ready-bg: rgba(56, 189, 248, 0.12);
+      
+      --status-blocked: #94a3b8;
+      --status-blocked-bg: rgba(148, 163, 184, 0.12);
+
+      --status-inprogress: #818cf8;
+      --status-inprogress-bg: rgba(129, 140, 248, 0.14);
+
+      --status-waiting: #fbbf24;
+      --status-waiting-bg: rgba(251, 191, 36, 0.14);
+
+      --status-done: #34d399;
+      --status-done-bg: rgba(52, 211, 153, 0.14);
+
+      --status-failed: #f87171;
+      --status-failed-bg: rgba(248, 113, 113, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      padding: 1.5rem 2rem;
+      line-height: 1.5;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+    }
+
+    .brand-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .brand-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+    }
+
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #34d399;
+      box-shadow: 0 0 8px #34d399;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    /* Section Titles */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .section-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Project Grouping */
+    .project-container {
+      margin-bottom: 2.5rem;
+    }
+
+    .project-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      padding: 0.4rem 0.8rem;
+      background: var(--bg-surface);
+      border-left: 4px solid #6366f1;
+      border-radius: 4px;
+      width: fit-content;
+    }
+
+    .project-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      font-family: monospace;
+    }
+
+    /* Kanban Board */
+    .kanban-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(220px, 1fr));
+      gap: 1rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+    }
+
+    .kanban-col {
+      background: var(--bg-surface);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      min-height: 200px;
+    }
+
+    .col-header {
+      padding: 0.75rem 0.9rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .col-ready { border-top: 3px solid var(--status-ready); color: var(--status-ready); }
+    .col-in_progress { border-top: 3px solid var(--status-inprogress); color: var(--status-inprogress); }
+    .col-blocked { border-top: 3px solid var(--status-blocked); color: var(--status-blocked); }
+    .col-waiting_quota { border-top: 3px solid var(--status-waiting); color: var(--status-waiting); }
+    .col-done { border-top: 3px solid var(--status-done); color: var(--status-done); }
+    .col-failed { border-top: 3px solid var(--status-failed); color: var(--status-failed); }
+
+    .col-count {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 0.1rem 0.45rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+    }
+
+    .col-cards {
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      flex: 1;
+    }
+
+    .empty-col {
+      color: var(--text-faint);
+      font-size: 0.8rem;
+      text-align: center;
+      margin: auto 0;
+      padding: 1.5rem 0;
+    }
+
+    /* Task Card */
+    .task-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 0.8rem 0.9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+
+    .task-card:hover {
+      border-color: #475569;
+      transform: translateY(-1px);
+    }
+
+    .card-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-main);
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+    }
+
+    .category-badge {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .tool-badge {
+      background: rgba(99, 102, 241, 0.15);
+      color: #a5b4fc;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.72rem;
+    }
+
+    .dep-badge {
+      background: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+    }
+
+    .card-updated {
+      font-size: 0.7rem;
+      color: var(--text-faint);
+      margin-top: 0.2rem;
+    }
+
+    /* Bottom Split Layout */
+    .bottom-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 1024px) {
+      .bottom-split {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+
+    /* Tables */
+    .data-table-wrapper {
+      overflow-x: auto;
+      margin-top: 0.75rem;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+
+    .data-table th {
+      background: var(--bg-surface-elevated);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .data-table td {
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .pill-available {
+      background: var(--status-done-bg);
+      color: var(--status-done);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+    }
+
+    .pill-exhausted {
+      background: var(--status-waiting-bg);
+      color: var(--status-waiting);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+    }
+
+    .event-badge {
+      font-family: monospace;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+
+    .event-call_success { color: #34d399; background: rgba(52, 211, 153, 0.1); }
+    .event-quota_exceeded { color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+    .event-call_failed { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+
+    .footer-note {
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: var(--text-faint);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand-title">
+      <span>Multi-Agent Orchestrator</span>
+      <span class="brand-badge">Read-Only Live View</span>
+    </div>
+    <div class="header-status">
+      <div class="live-indicator">
+        <span class="live-dot"></span>
+        <span>Auto-refreshing (5s)</span>
+      </div>
+      <span id="last-sync-time">Last sync: Initializing...</span>
+      <span style="color: #64748b;">Auth: <strong style="color: #cbd5e1;">{{ user }}</strong></span>
+    </div>
+  </header>
+
+  <!-- 1. Task Boards -->
+  <main>
+    <div class="section-header">
+      <h2 class="section-title">Task Pipeline</h2>
+      <span class="section-subtitle" id="total-tasks-summary">Loading tasks...</span>
+    </div>
+
+    <div id="task-boards-container">
+      <!-- Injected dynamically by renderBoards() -->
+    </div>
+
+    <!-- 2. Quota Status & Recent Activity Log Split -->
+    <div class="bottom-split">
+      
+      <!-- Quota Status Panel -->
+      <section class="panel">
+        <div class="section-header">
+          <h3 class="section-title">Tool Quota Status</h3>
+          <span class="section-subtitle">Real-time availability</span>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table" id="quota-table">
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Model</th>
+                <th>Status</th>
+                <th>Reset In</th>
+                <th>Last Checked</th>
+              </tr>
+            </thead>
+            <tbody id="quota-tbody">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-faint);">Loading quotas...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Activity Log Panel -->
+      <section class="panel">
+        <div class="section-header">
+          <h3 class="section-title">Recent Activity Log</h3>
+          <span class="section-subtitle">Last 20 quota & execution events</span>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table" id="activity-table">
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Model</th>
+                <th>Event</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="activity-tbody">
+              <tr><td colspan="4" style="text-align: center; color: var(--text-faint);">Loading events...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="footer-note">
+    Orchestrator Read-Only Dashboard &bull; Secured with HTTP Basic Auth &bull; Polling <code>/dashboard/data</code>
+  </footer>
+
+  <script>
+    (function () {
+      const STATUSES = ['ready', 'in_progress', 'blocked', 'waiting_quota', 'done', 'failed'];
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+      }
+
+      function renderBoards(tasks) {
+        const container = document.getElementById('task-boards-container');
+        const summary = document.getElementById('total-tasks-summary');
+        
+        summary.textContent = `${tasks.length} task${tasks.length === 1 ? '' : 's'} across projects`;
+
+        // Group tasks by project_id
+        const projects = {};
+        tasks.forEach(t => {
+          const pid = (t.project_id || 'unassigned').trim();
+          if (!projects[pid]) projects[pid] = [];
+          projects[pid].push(t);
+        });
+
+        const projectKeys = Object.keys(projects);
+        if (projectKeys.length === 0) {
+          container.innerHTML = `
+            <div class="panel" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+              No tasks currently registered on the orchestrator board.
+            </div>`;
+          return;
+        }
+
+        let html = '';
+        projectKeys.forEach(pid => {
+          const pTasks = projects[pid];
+          
+          html += `<div class="project-container">`;
+          // If more than one project exists (or always for clarity), show project badge
+          html += `
+            <div class="project-header">
+              <span style="color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase;">Project:</span>
+              <span class="project-name">${escapeHtml(pid)}</span>
+              <span style="color: var(--text-faint); font-size: 0.75rem;">(${pTasks.length} tasks)</span>
+            </div>`;
+
+          html += `<div class="kanban-grid">`;
+          
+          STATUSES.forEach(st => {
+            const inStatus = pTasks.filter(t => t.status === st);
+            const statusLabel = st.replace('_', ' ');
+
+            html += `
+              <div class="kanban-col col-${st}">
+                <div class="col-header">
+                  <span>${statusLabel}</span>
+                  <span class="col-count">${inStatus.length}</span>
+                </div>
+                <div class="col-cards">`;
+
+            if (inStatus.length === 0) {
+              html += `<div class="empty-col">No tasks</div>`;
+            } else {
+              inStatus.forEach(t => {
+                const toolInfo = t.assigned_tool 
+                  ? `${escapeHtml(t.assigned_tool)}${t.assigned_model ? ' (' + escapeHtml(t.assigned_model) + ')' : ''}` 
+                  : 'Unassigned';
+
+                html += `
+                  <div class="task-card">
+                    <div class="card-title">${escapeHtml(t.title)}</div>
+                    <div class="card-meta">
+                      <span class="category-badge">${escapeHtml(t.category)}</span>
+                      <span class="tool-badge">${toolInfo}</span>
+                      ${t.depends_on ? `<span class="dep-badge">dep:#${t.depends_on}</span>` : ''}
+                    </div>
+                    <div class="card-updated">${escapeHtml(t.updated_at_str || '')}</div>
+                  </div>`;
+              });
+            }
+
+            html += `
+                </div>
+              </div>`;
+          });
+
+          html += `</div></div>`;
+        });
+
+        container.innerHTML = html;
+      }
+
+      function renderQuotas(quotas) {
+        const tbody = document.getElementById('quota-tbody');
+        if (!quotas || quotas.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-faint);">No quota records found</td></tr>`;
+          return;
+        }
+
+        let html = '';
+        quotas.forEach(q => {
+          const pillClass = q.status === 'available' ? 'pill-available' : 'pill-exhausted';
+          html += `
+            <tr>
+              <td><strong>${escapeHtml(q.tool_name)}</strong></td>
+              <td>${escapeHtml(q.model_name || '—')}</td>
+              <td><span class="status-pill ${pillClass}">${escapeHtml(q.status)}</span></td>
+              <td>${escapeHtml(q.reset_at_human || '—')}</td>
+              <td style="color: var(--text-faint); font-size: 0.75rem;">${escapeHtml(q.last_checked_str || '—')}</td>
+            </tr>`;
+        });
+        tbody.innerHTML = html;
+      }
+
+      function renderLogs(logs) {
+        const tbody = document.getElementById('activity-tbody');
+        if (!logs || logs.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-faint);">No activity logs yet</td></tr>`;
+          return;
+        }
+
+        let html = '';
+        logs.forEach(l => {
+          const ev = l.event || '';
+          const evClass = `event-${ev.toLowerCase()}`;
+          html += `
+            <tr>
+              <td><strong>${escapeHtml(l.tool_name)}</strong></td>
+              <td>${escapeHtml(l.model_name || '—')}</td>
+              <td><span class="event-badge ${evClass}">${escapeHtml(ev)}</span></td>
+              <td style="color: var(--text-faint); font-size: 0.75rem;">${escapeHtml(l.timestamp_str || '')}</td>
+            </tr>`;
+        });
+        tbody.innerHTML = html;
+      }
+
+      async function fetchDashboardData() {
+        try {
+          const res = await fetch('/dashboard/data', {
+            headers: { 'Accept': 'application/json' }
+          });
+          
+          if (!res.ok) {
+            console.error('Failed to fetch dashboard data:', res.status, res.statusText);
+            document.getElementById('last-sync-time').textContent = `Sync failed (${res.status})`;
+            return;
+          }
+
+          const data = await res.json();
+          renderBoards(data.tasks || []);
+          renderQuotas(data.quotas || []);
+          renderLogs(data.logs || []);
+
+          document.getElementById('last-sync-time').textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
+        } catch (err) {
+          console.error('Error fetching dashboard data:', err);
+          document.getElementById('last-sync-time').textContent = 'Sync error';
+        }
+      }
+
+      // Initial fetch and 5-second polling interval
+      fetchDashboardData();
+      setInterval(fetchDashboardData, 5000);
+    })();
+  </script>
+</body>
+</html>

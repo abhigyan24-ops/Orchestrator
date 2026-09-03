@@ -1,0 +1,28 @@
+[project]
+name = "multi-agent-orchestrator"
+version = "0.1.0"
+description = "MCP server for coordinating multiple AI coding tools on shared projects"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "fastmcp>=2.0",
+    "asyncpg>=0.30",
+    "cryptography>=43.0",
+    "python-dotenv>=1.0",
+    "pydantic>=2.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends._legacy:_Backend"
