@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -63,16 +63,24 @@ async def health_check():
     return {"status": "ok", "service": "multi-agent-orchestrator"}
 
 
-# Depending on the specific version of `fastmcp` installed, mounting it to FastAPI varies.
-# This assumes the package exposes a router, a starlette app, or `add_to_fastapi`.
-if hasattr(mcp, "add_to_fastapi"):
+@app.get("/mcp")
+@app.get("/mcp/")
+async def mcp_redirect():
+    """Redirect /mcp to /mcp/sse for SSE clients."""
+    return RedirectResponse(url="/mcp/sse", status_code=307)
+
+
+# Mount FastMCP SSE transport
+if hasattr(mcp, "http_app"):
+    mcp_subapp = mcp.http_app(transport="sse")
+    app.mount("/mcp", mcp_subapp)
+elif hasattr(mcp, "add_to_fastapi"):
     mcp.add_to_fastapi(app, prefix="/mcp")
 else:
-    # Fallback/Generic way to mount a Starlette sub-application if mcp has a .app or .server attribute
-    # FastMCP uses Starlette under the hood for SSE
     starlette_app = getattr(mcp, "app", None) or getattr(mcp, "_app", None)
     if starlette_app:
         app.mount("/mcp", starlette_app)
+
 
 # Mount the static dashboard at the root
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
