@@ -121,12 +121,20 @@ async def api_plan_feature(req: PlanFeatureRequest):
         dep_title = t.get("depends_on")
         dep_id = created_task_ids.get(dep_title) if dep_title else None
         
+        ac = t.get("acceptance_criteria", "")
+        if isinstance(ac, list):
+            ac = "\n".join([f"- {item}" for item in ac])
+            
+        brief = t.get("brief", "")
+        if isinstance(brief, list):
+            brief = "\n".join(brief)
+        
         db_task = await add_task(
             project_id=req.project_id,
             title=t.get("title", "Untitled Task"),
             category=t.get("category", "boilerplate"),
-            brief=t.get("brief", ""),
-            acceptance_criteria=t.get("acceptance_criteria", ""),
+            brief=brief,
+            acceptance_criteria=ac,
             complexity_score=t.get("complexity_score", 1),
             depends_on=dep_id
         )
