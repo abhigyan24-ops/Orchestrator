@@ -43,6 +43,18 @@ class GitAgent:
         subprocess.run(["git", "config", "user.name", "AI DevOps Agent"], cwd=self.working_dir, check=True)
         subprocess.run(["git", "config", "user.email", "bot@orchestrator.ai"], cwd=self.working_dir, check=True)
 
+        # Check if repo is empty (no remote branches)
+        result = subprocess.run(["git", "branch", "-r"], cwd=self.working_dir, capture_output=True, text=True)
+        if not result.stdout.strip():
+            print("GitAgent: Repository is completely empty. Initializing 'main' branch...")
+            subprocess.run(["git", "checkout", "-b", "main"], cwd=self.working_dir, check=True)
+            readme_path = os.path.join(self.working_dir, "README.md")
+            with open(readme_path, "w", encoding="utf-8") as f:
+                f.write(f"# {self.repo}\nRepository initialized by AI Swarm.")
+            subprocess.run(["git", "add", "README.md"], cwd=self.working_dir, check=True)
+            subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=self.working_dir, check=True)
+            subprocess.run(["git", "push", "-u", "origin", "main"], cwd=self.working_dir, check=True)
+
     def create_branch(self, branch_name: str):
         """Create and checkout a new branch."""
         print(f"GitAgent: Creating branch {branch_name}...")
