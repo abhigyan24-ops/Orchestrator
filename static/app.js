@@ -225,7 +225,7 @@ if (planFeatureForm) {
         e.preventDefault();
         const btn = document.getElementById('plan-submit-btn');
         const originalText = btn.textContent;
-        btn.textContent = 'Planning (this takes a moment)...';
+        btn.textContent = 'Starting AI Planner...';
         btn.disabled = true;
         
         const payload = {
@@ -234,15 +234,40 @@ if (planFeatureForm) {
         };
         
         try {
-            await apiCall('/plan_feature', { method: 'POST', body: payload });
-            planFeatureForm.reset();
-            planFeatureModal.classList.add('hidden');
-            loadTasks();
-            document.querySelector('[data-tab="tasks"]').click();
+            const res = await apiCall('/plan_feature', { method: 'POST', body: payload });
+            const jobId = res.job_id;
+            
+            btn.textContent = 'Planning in background (0s)...';
+            let elapsed = 0;
+            
+            const pollInterval = setInterval(async () => {
+                elapsed += 2;
+                btn.textContent = `Planning in background (${elapsed}s)...`;
+                
+                try {
+                    const statusRes = await apiCall(`/plan_feature/${jobId}`);
+                    if (statusRes.status === 'completed') {
+                        clearInterval(pollInterval);
+                        planFeatureForm.reset();
+                        planFeatureModal.classList.add('hidden');
+                        loadTasks();
+                        document.querySelector('[data-tab="tasks"]').click();
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    } else if (statusRes.status === 'failed') {
+                        clearInterval(pollInterval);
+                        alert("AI Planning failed: " + statusRes.error);
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }
+                } catch (pollErr) {
+                    console.warn("Poll error:", pollErr);
+                }
+            }, 2000);
+            
         } catch (err) {
-            alert("Failed to plan feature. Check console or backend logs.");
+            alert("Failed to start planning job.");
             console.error(err);
-        } finally {
             btn.textContent = originalText;
             btn.disabled = false;
         }

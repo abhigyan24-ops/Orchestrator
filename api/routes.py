@@ -102,43 +102,69 @@ async def create_new_task(task: TaskCreate):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+import uuid
+import asyncio
+
+planning_jobs = {}
+
+async def background_plan_feature(job_id: str, req: PlanFeatureRequest):
+    try:
+        from core import pm_llm, context_manager
+        
+        ctx = await context_manager.get_context(req.project_id)
+        ctx_str = ctx.model_dump_json() if ctx else ""
+        
+        # Run the synchronous LLM call in a thread to not block the event loop
+        tasks_plan = await asyncio.to_thread(pm_llm.decompose_feature, req.project_id, req.feature_description, ctx_str)
+        
+        if not tasks_plan:
+            planning_jobs[job_id] = {"status": "failed", "error": "Failed to generate task plan (empty)."}
+            return
+            
+        created_task_ids = {} # map title -> db id
+        
+        for t in tasks_plan:
+            dep_title = t.get("depends_on")
+            dep_id = created_task_ids.get(dep_title) if dep_title else None
+            
+            ac = t.get("acceptance_criteria", "")
+            if isinstance(ac, list):
+                ac = "\n".join([f"- {item}" for item in ac])
+                
+            brief = t.get("brief", "")
+            if isinstance(brief, list):
+                brief = "\n".join(brief)
+            
+            db_task = await add_task(
+                project_id=req.project_id,
+                title=t.get("title", "Untitled Task"),
+                category=t.get("category", "boilerplate"),
+                brief=brief,
+                acceptance_criteria=ac,
+                complexity_score=t.get("complexity_score", 1),
+                depends_on=dep_id
+            )
+            created_task_ids[db_task.title] = db_task.id
+            
+        planning_jobs[job_id] = {"status": "completed"}
+    except Exception as e:
+        print(f"Background planning failed: {e}")
+        planning_jobs[job_id] = {"status": "failed", "error": str(e)}
+
 @router.post("/plan_feature")
 async def api_plan_feature(req: PlanFeatureRequest):
-    """Use the AI PM to generate a list of tasks for a feature."""
-    from core import pm_llm, context_manager
+    """Start the AI PM to generate a list of tasks in the background."""
+    job_id = str(uuid.uuid4())
+    planning_jobs[job_id] = {"status": "processing"}
     
-    ctx = await context_manager.get_context(req.project_id)
-    ctx_str = ctx.model_dump_json() if ctx else ""
+    asyncio.create_task(background_plan_feature(job_id, req))
     
-    tasks_plan = pm_llm.decompose_feature(req.project_id, req.feature_description, ctx_str)
-    if not tasks_plan:
-        raise HTTPException(status_code=500, detail="Failed to generate task plan.")
-        
-    created_task_ids = {} # map title -> db id
-    results = []
-    
-    for t in tasks_plan:
-        dep_title = t.get("depends_on")
-        dep_id = created_task_ids.get(dep_title) if dep_title else None
-        
-        ac = t.get("acceptance_criteria", "")
-        if isinstance(ac, list):
-            ac = "\n".join([f"- {item}" for item in ac])
-            
-        brief = t.get("brief", "")
-        if isinstance(brief, list):
-            brief = "\n".join(brief)
-        
-        db_task = await add_task(
-            project_id=req.project_id,
-            title=t.get("title", "Untitled Task"),
-            category=t.get("category", "boilerplate"),
-            brief=brief,
-            acceptance_criteria=ac,
-            complexity_score=t.get("complexity_score", 1),
-            depends_on=dep_id
-        )
-        created_task_ids[db_task.title] = db_task.id
-        results.append(db_task.model_dump())
-        
-    return {"status": "success", "tasks_created": len(results), "tasks": results}
+    return {"status": "processing", "job_id": job_id}
+
+@router.get("/plan_feature/{job_id}")
+async def get_plan_feature_status(job_id: str):
+    """Poll the status of a planning job."""
+    if job_id not in planning_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return planning_jobs[job_id]
+
