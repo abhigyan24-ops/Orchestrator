@@ -87,7 +87,7 @@ Please write the code for this task:"""
     
     try:
         raw_code_response = _call_pm_llm(messages)
-        files_to_write = extract_code_blocks(raw_response)
+        files_to_write = extract_code_blocks(raw_code_response)
         
         if not files_to_write:
             raise ValueError("LLM returned no code blocks.")
