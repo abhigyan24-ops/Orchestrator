@@ -1,7 +1,7 @@
 import os
 import re
 from core.models import Task, TaskStatus
-from core.task_manager import get_tasks, update_task_status
+from core.task_manager import update_task_status
 from core.pm_llm import _call_pm_llm
 from core.git_agent import GitAgent
 
