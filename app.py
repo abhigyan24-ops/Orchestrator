@@ -1,4 +1,5 @@
 import os
+import secrets
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Request
@@ -41,13 +42,18 @@ app = FastAPI(
 async def mcp_auth_middleware(request: Request, call_next):
     """Simple middleware to protect /mcp endpoints."""
     if request.url.path.startswith("/mcp"):
+        token = None
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+        elif "token" in request.query_params:
+            token = request.query_params.get("token")
+
+        if not token:
             return JSONResponse({"detail": "Missing or invalid token"}, status_code=401)
         
-        token = auth_header.split(" ")[1]
         expected_token = os.environ.get("MCP_AUTH_TOKEN")
-        if not expected_token or token != expected_token:
+        if not expected_token or not secrets.compare_digest(token, expected_token):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
             
     return await call_next(request)
