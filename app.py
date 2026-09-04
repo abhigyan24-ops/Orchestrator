@@ -3,7 +3,7 @@ import secrets
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastmcp.utilities.lifespan import combine_lifespans
 import uvicorn
@@ -15,8 +15,11 @@ from db.connection import init_pool, close_pool
 
 load_dotenv()
 
-# Create FastMCP Streamable HTTP subapp (handles both POST and GET on /mcp per MCP spec)
-mcp_app = mcp.http_app(path="/", transport="streamable-http")
+# Create FastMCP Streamable HTTP subapp.
+# path="/mcp" means the MCP handler is registered at /mcp inside the subapp.
+# The subapp is mounted at "/" so the full path /mcp is preserved end-to-end,
+# avoiding the double-prefix stripping bug with path="/" mounted at "/mcp".
+mcp_app = mcp.http_app(path="/mcp", transport="streamable-http")
 
 
 @asynccontextmanager
@@ -36,8 +39,8 @@ async def app_lifespan(app: FastAPI):
     await close_pool()
 
 
-# Create FastAPI application, combining our app lifespan with the MCP subapp lifespan
-# combine_lifespans ensures the MCP session manager task group is properly initialised
+# Create FastAPI application, combining our app lifespan with the MCP subapp lifespan.
+# combine_lifespans ensures the MCP session manager task group is properly initialised.
 app = FastAPI(
     title="Multi-Agent Orchestrator MCP",
     description="Shared context and quota management for AI coding tools",
@@ -77,12 +80,20 @@ async def health_check():
     return {"status": "ok", "service": "multi-agent-orchestrator"}
 
 
-# Mount FastMCP Streamable HTTP transport at /mcp
-# Handles both POST (for JSON-RPC messages) and GET (for SSE stream) on the same /mcp path
-app.mount("/mcp", mcp_app)
+# Serve static assets under /static/ (JS, CSS)
+app.mount("/static", StaticFiles(directory="static"), name="static_assets")
 
-# Mount the static dashboard at the root
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+@app.get("/", include_in_schema=False)
+async def serve_index():
+    """Serve the dashboard index page at root."""
+    return FileResponse("static/index.html")
+
+
+# Mount FastMCP Streamable HTTP transport at the root of the app.
+# The MCP route is /mcp inside the subapp, so GET /mcp and POST /mcp both work.
+# This must come LAST so explicit routes above take precedence.
+app.mount("/", mcp_app)
 
 
 if __name__ == "__main__":
