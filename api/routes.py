@@ -34,6 +34,12 @@ class TaskCreate(BaseModel):
     target_folder: Optional[str] = None
 
 
+class PlanFeatureRequest(BaseModel):
+    project_id: str
+    feature_description: str
+
+
+
 @router.get("/credentials")
 async def get_credentials():
     """Get all configured credentials (without exposing the raw encrypted api_key)."""
@@ -94,3 +100,37 @@ async def create_new_task(task: TaskCreate):
         return {"status": "success", "task": new_task.model_dump()}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/plan_feature")
+async def api_plan_feature(req: PlanFeatureRequest):
+    """Use the AI PM to generate a list of tasks for a feature."""
+    from core import pm_llm, context_manager
+    
+    ctx = await context_manager.get_context(req.project_id)
+    ctx_str = ctx.model_dump_json() if ctx else ""
+    
+    tasks_plan = pm_llm.decompose_feature(req.project_id, req.feature_description, ctx_str)
+    if not tasks_plan:
+        raise HTTPException(status_code=500, detail="Failed to generate task plan.")
+        
+    created_task_ids = {} # map title -> db id
+    results = []
+    
+    for t in tasks_plan:
+        dep_title = t.get("depends_on")
+        dep_id = created_task_ids.get(dep_title) if dep_title else None
+        
+        db_task = await add_task(
+            project_id=req.project_id,
+            title=t.get("title", "Untitled Task"),
+            category=t.get("category", "boilerplate"),
+            brief=t.get("brief", ""),
+            acceptance_criteria=t.get("acceptance_criteria", ""),
+            complexity_score=t.get("complexity_score", 1),
+            depends_on=dep_id
+        )
+        created_task_ids[db_task.title] = db_task.id
+        results.append(db_task.model_dump())
+        
+    return {"status": "success", "tasks_created": len(results), "tasks": results}

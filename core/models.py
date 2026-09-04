@@ -57,6 +57,11 @@ class Task(BaseModel):
     title: str
     category: str
     description: Optional[str] = None
+    brief: Optional[str] = None
+    acceptance_criteria: Optional[str] = None
+    complexity_score: int = 1
+    working_branch: Optional[str] = None
+    partial_summary: Optional[str] = None
     status: TaskStatus
     assigned_tool: Optional[str] = None
     assigned_model: Optional[str] = None

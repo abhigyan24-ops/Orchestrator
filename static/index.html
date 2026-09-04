@@ -175,7 +175,10 @@
             <section id="tasks-tab" class="tab-content glass-panel">
                 <div class="header-action">
                     <h2>Task Monitor</h2>
-                    <button id="show-add-task-modal" class="primary-btn">+ Create Task</button>
+                    <div>
+                        <button id="show-plan-feature-modal" class="secondary-btn" style="margin-right: 8px;">✨ Plan Feature</button>
+                        <button id="show-add-task-modal" class="primary-btn">+ Create Task</button>
+                    </div>
                 </div>
                 <div class="table-container">
                     <table id="task-table">
@@ -184,6 +187,7 @@
                                 <th>ID</th>
                                 <th>Project</th>
                                 <th>Title</th>
+                                <th>Complexity</th>
                                 <th>Status</th>
                                 <th>Assigned To</th>
                                 <th>Created</th>
@@ -253,6 +257,27 @@
                 <div class="modal-actions">
                     <button type="button" class="cancel-btn modal-close">Cancel</button>
                     <button type="submit" class="primary-btn">Dispatch Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="plan-feature-modal" class="modal hidden">
+        <div class="modal-content glass-panel">
+            <h3>Plan Feature (AI PM)</h3>
+            <p style="margin-bottom: 1rem; color: #a1a1aa; font-size: 0.9rem;">The Orchestrator will use your Hybrid PM LLM to decompose this feature into an actionable task graph.</p>
+            <form id="plan-feature-form">
+                <div class="input-group">
+                    <label>Project ID</label>
+                    <input type="text" id="plan-project" placeholder="e.g. ecommerce-v1" required>
+                </div>
+                <div class="input-group">
+                    <label>Feature Description</label>
+                    <textarea id="plan-desc" placeholder="Describe the feature in plain English..." rows="4" required></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="cancel-btn modal-close">Cancel</button>
+                    <button type="submit" class="primary-btn" id="plan-submit-btn">Generate Plan</button>
                 </div>
             </form>
         </div>

@@ -24,6 +24,10 @@ const showAddTaskBtn = document.getElementById('show-add-task-modal');
 const addTaskModal = document.getElementById('add-task-modal');
 const addTaskForm = document.getElementById('add-task-form');
 
+const showPlanFeatureBtn = document.getElementById('show-plan-feature-modal');
+const planFeatureModal = document.getElementById('plan-feature-modal');
+const planFeatureForm = document.getElementById('plan-feature-form');
+
 const modalCloseBtns = document.querySelectorAll('.modal-close');
 
 // --- Init & Auth ---
@@ -99,11 +103,15 @@ navBtns.forEach(btn => {
 // --- Modal Handlers ---
 showAddCredBtn.addEventListener('click', () => addCredModal.classList.remove('hidden'));
 showAddTaskBtn.addEventListener('click', () => addTaskModal.classList.remove('hidden'));
+if (showPlanFeatureBtn) {
+    showPlanFeatureBtn.addEventListener('click', () => planFeatureModal.classList.remove('hidden'));
+}
 
 modalCloseBtns.forEach(btn => {
     btn.addEventListener('click', () => {
         addCredModal.classList.add('hidden');
         addTaskModal.classList.add('hidden');
+        if (planFeatureModal) planFeatureModal.classList.add('hidden');
     });
 });
 
@@ -185,6 +193,7 @@ async function loadTasks() {
             <td>#${t.id}</td>
             <td>${t.project_id}</td>
             <td>${t.title}</td>
+            <td>Tier ${t.complexity_score || 1}</td>
             <td><span class="status-badge status-${t.status}">${t.status}</span></td>
             <td>${t.assigned_tool || '-'}</td>
             <td>${new Date(t.created_at).toLocaleString()}</td>
@@ -210,6 +219,35 @@ addTaskForm.addEventListener('submit', async (e) => {
     // Switch to tasks tab
     document.querySelector('[data-tab="tasks"]').click();
 });
+
+if (planFeatureForm) {
+    planFeatureForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('plan-submit-btn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Planning (this takes a moment)...';
+        btn.disabled = true;
+        
+        const payload = {
+            project_id: document.getElementById('plan-project').value,
+            feature_description: document.getElementById('plan-desc').value
+        };
+        
+        try {
+            await apiCall('/plan_feature', { method: 'POST', body: payload });
+            planFeatureForm.reset();
+            planFeatureModal.classList.add('hidden');
+            loadTasks();
+            document.querySelector('[data-tab="tasks"]').click();
+        } catch (err) {
+            alert("Failed to plan feature. Check console or backend logs.");
+            console.error(err);
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    });
+}
 
 // Periodic refresh for tasks (every 10s)
 setInterval(() => {

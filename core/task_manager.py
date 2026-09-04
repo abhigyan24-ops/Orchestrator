@@ -43,40 +43,44 @@ async def pick_tool(category: str, conn: Optional[Connection] = None) -> Tuple[O
 
 
 async def get_next_task(
-    project_id: str, tool_name: str, model_name: str = "", conn: Optional[Connection] = None
+    project_id: str, tool_name: str, available_models: List[str] = None, conn: Optional[Connection] = None
 ) -> Optional[Task]:
     """Returns the oldest task with status='ready' and assigned_tool IS NULL for that project.
     If model_name is given, ensures the category matches tool_skills.
     Marks it in_progress.
     """
     async def _execute(c: Connection):
-        # First, find valid categories for this tool/model if requested
-        category_filter = ""
-        categories = []
-        if model_name:
-            cat_rows = await c.fetch(
-                "SELECT task_category FROM tool_skills WHERE tool_name = $1 AND model_name = $2",
-                tool_name, model_name
-            )
-            categories = [r['task_category'] for r in cat_rows]
-            if categories:
-                # build IN clause dynamically based on available categories
-                placeholders = ",".join(f"${i+2}" for i in range(len(categories)))
-                category_filter = f"AND category IN ({placeholders})"
+        # Determine capability tier of available models
+        # Tier 5: Frontier/Pro, Tier 4: Sonnet, Tier 2: Flash/Mini/Haiku, Tier 1: Basic
+        max_tier = 1
+        assigned_model = ""
+        if available_models:
+            assigned_model = available_models[0] # Record the primary one being used
+            for m in available_models:
+                m_lower = m.lower()
+                if "pro" in m_lower or "opus" in m_lower or "4o" in m_lower or "4.6" in m_lower or "o1" in m_lower or "o3" in m_lower:
+                    tier = 5
+                elif "sonnet" in m_lower:
+                    tier = 4
+                elif "flash" in m_lower or "haiku" in m_lower or "mini" in m_lower:
+                    tier = 2
+                else:
+                    tier = 1
+                max_tier = max(max_tier, tier)
+        else:
+            max_tier = 5 # If not specified, assume capable of anything
 
-        # Find the oldest ready task
+        # Find the oldest ready task matching capability
         query = f"""
             SELECT id 
             FROM tasks 
             WHERE project_id = $1 AND status = 'ready' AND assigned_tool IS NULL 
-            {category_filter}
+            AND complexity_score <= $2
             ORDER BY created_at ASC 
             LIMIT 1
             FOR UPDATE SKIP LOCKED
         """
-        args = [project_id]
-        if categories:
-            args.extend(categories)
+        args = [project_id, max_tier]
 
         row = await c.fetchrow(query, *args)
         if not row:
@@ -92,7 +96,7 @@ async def get_next_task(
             WHERE id = $3
             RETURNING *
             """,
-            tool_name, model_name, task_id
+            tool_name, assigned_model, task_id
         )
         return Task(**dict(updated))
 
@@ -109,6 +113,9 @@ async def report_progress(
     summary: str, 
     quota_exceeded: bool = False, 
     raw_response: str = "", 
+    model_exhausted: str = "",
+    partial_summary: str = "",
+    working_branch: str = "",
     reset_hint_hours: float = 24.0,
     conn: Optional[Connection] = None
 ) -> str:
@@ -148,13 +155,15 @@ async def report_progress(
             await c.execute(
                 """
                 UPDATE tasks 
-                SET status = 'waiting_quota', assigned_tool = NULL, assigned_model = NULL, updated_at = NOW() 
+                SET status = 'waiting_quota', assigned_tool = NULL, assigned_model = NULL, updated_at = NOW(),
+                    partial_summary = COALESCE($2, partial_summary), working_branch = COALESCE($3, working_branch)
                 WHERE id = $1
                 """,
-                task_id
+                task_id, partial_summary or None, working_branch or None
             )
-            await mark_exhausted(t_name, m_name, reset_hint_hours, conn=c)
-            await log_event(t_name, m_name, QuotaEvent.QUOTA_EXCEEDED, task_id, raw_response, conn=c)
+            exhausted_model = model_exhausted or m_name
+            await mark_exhausted(t_name, exhausted_model, reset_hint_hours, conn=c)
+            await log_event(t_name, exhausted_model, QuotaEvent.QUOTA_EXCEEDED, task_id, raw_response, conn=c)
             
             # Determine tool type and fallback message
             tool_row = await c.fetchrow("SELECT tool_type FROM api_credentials WHERE tool_name = $1 LIMIT 1", t_name)
@@ -207,6 +216,9 @@ async def add_task(
     title: str, 
     category: str, 
     description: Optional[str] = None, 
+    brief: Optional[str] = None,
+    acceptance_criteria: Optional[str] = None,
+    complexity_score: int = 1,
     depends_on: Optional[int] = None, 
     repo_url: Optional[str] = None, 
     branch: Optional[str] = None, 
@@ -227,13 +239,13 @@ async def add_task(
         row = await c.fetchrow(
             """
             INSERT INTO tasks (
-                project_id, title, category, description, status, 
+                project_id, title, category, description, brief, acceptance_criteria, complexity_score, status, 
                 depends_on, repo_url, branch, target_folder, base_branch
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *
             """,
-            project_id, title, category, description, status,
+            project_id, title, category, description, brief, acceptance_criteria, complexity_score, status,
             depends_on, repo_url, branch, target_folder, base_branch
         )
         return Task(**dict(row))
@@ -260,6 +272,21 @@ async def retry_waiting_tasks(project_id: str, conn: Optional[Connection] = None
                 promoted += 1
                 
         return promoted
+
+    if conn:
+        return await _execute(conn)
+    else:
+        async with get_connection() as c:
+            return await _execute(c)
+
+
+async def get_task(task_id: int, conn: Optional[Connection] = None) -> Optional[Task]:
+    """Retrieve a single task by ID."""
+    async def _execute(c: Connection):
+        row = await c.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
+        if row:
+            return Task(**dict(row))
+        return None
 
     if conn:
         return await _execute(conn)
