@@ -70,11 +70,10 @@
                         <p>Open Cursor > Settings > Features > MCP. Add a new server and use this JSON configuration:</p>
                         <pre><code id="cursor-code">{
   "mcpServers": {
-    "Orchestrator": {
-      "command": "node",
-      "args": ["@modelcontextprotocol/client-sse", "http://localhost:8000/mcp"],
-      "env": {
-        "Authorization": "Bearer YOUR_TOKEN"
+    "orchestrator": {
+      "url": "https://orchestrator-d3h8.onrender.com/mcp",
+      "headers": {
+        "Authorization": "Bearer XRpbN-hS7dZtInpyR4m3LAWri5JrMh4N8J-WUJDmR6M"
       }
     }
   }
@@ -91,11 +90,19 @@
                         <pre><code id="ag-code">{
   "mcpServers": {
     "orchestrator": {
-      "command": "node",
-      "args": ["@modelcontextprotocol/client-sse", "http://localhost:8000/mcp"],
-      "env": {
-        "Authorization": "Bearer YOUR_TOKEN"
-      }
+      "url": "https://orchestrator-d3h8.onrender.com/mcp",
+      "headers": {
+        "Authorization": "Bearer XRpbN-hS7dZtInpyR4m3LAWri5JrMh4N8J-WUJDmR6M"
+      },
+      "alwaysAllow": [
+        "get_next_task",
+        "report_task_progress",
+        "create_task",
+        "get_project_context",
+        "update_project_context",
+        "retry_waiting_tasks",
+        "list_tasks"
+      ]
     }
   }
 }</code></pre>
@@ -110,10 +117,10 @@
                         <p>In Kiro, you can add an SSE MCP server directly via CLI or settings. Use this configuration:</p>
                         <pre><code id="kiro-code">{
   "orchestrator": {
-    "type": "sse",
-    "url": "http://localhost:8000/mcp",
+    "type": "http",
+    "url": "https://orchestrator-d3h8.onrender.com/mcp",
     "headers": {
-      "Authorization": "Bearer YOUR_TOKEN"
+      "Authorization": "Bearer XRpbN-hS7dZtInpyR4m3LAWri5JrMh4N8J-WUJDmR6M"
     }
   }
 }</code></pre>
@@ -128,11 +135,10 @@
                         <p>Edit your `claude_desktop_config.json` file to include the orchestrator:</p>
                         <pre><code id="claude-code">{
   "mcpServers": {
-    "shared_brain": {
-      "command": "node",
-      "args": ["@modelcontextprotocol/client-sse", "http://localhost:8000/mcp"],
-      "env": {
-        "Authorization": "Bearer YOUR_TOKEN"
+    "orchestrator": {
+      "url": "https://orchestrator-d3h8.onrender.com/mcp",
+      "headers": {
+        "Authorization": "Bearer XRpbN-hS7dZtInpyR4m3LAWri5JrMh4N8J-WUJDmR6M"
       }
     }
   }
