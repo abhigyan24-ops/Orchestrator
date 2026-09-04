@@ -324,3 +324,46 @@ async def list_tasks(
         async with get_connection() as c:
             return await _execute(c)
 
+async def update_task_status(task_id: int, status: str, assigned_agent: Optional[str] = None):
+    """Helper to update a task's status for the Swarm."""
+    async with get_connection() as c:
+        if assigned_agent:
+            await c.execute("UPDATE tasks SET status = $1, assigned_tool = $2, updated_at = NOW() WHERE id = $3", status, assigned_agent, task_id)
+        else:
+            await c.execute("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", status, task_id)
+
+import asyncio
+
+_swarm_running = False
+_swarm_task = None
+
+async def _swarm_worker_loop():
+    global _swarm_running
+    from core.swarm import execute_task_with_swarm
+    while _swarm_running:
+        try:
+            async with get_connection() as c:
+                row = await c.fetchrow("SELECT id FROM tasks WHERE status = 'ready' ORDER BY created_at ASC LIMIT 1")
+                if row:
+                    task_id = row['id']
+                    # Yield back to the event loop so we don't block
+                    await execute_task_with_swarm(task_id)
+        except Exception as e:
+            print(f"Swarm loop exception: {e}")
+            
+        await asyncio.sleep(10)
+
+def set_swarm_status(enabled: bool):
+    """Start or stop the background Swarm polling loop."""
+    global _swarm_running, _swarm_task
+    _swarm_running = enabled
+    if enabled and (_swarm_task is None or _swarm_task.done()):
+        _swarm_task = asyncio.create_task(_swarm_worker_loop())
+        print("Swarm loop started.")
+    elif not enabled:
+        print("Swarm loop stopped.")
+
+def get_swarm_status() -> bool:
+    return _swarm_running
+
+

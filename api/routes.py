@@ -168,3 +168,20 @@ async def get_plan_feature_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     return planning_jobs[job_id]
 
+class SwarmToggle(BaseModel):
+    enabled: bool
+
+@router.post("/swarm/toggle")
+async def toggle_swarm(req: SwarmToggle):
+    """Start or stop the autonomous Agent Swarm."""
+    from core.task_manager import set_swarm_status
+    set_swarm_status(req.enabled)
+    return {"status": "success", "swarm_enabled": req.enabled}
+
+@router.get("/swarm/status")
+async def get_swarm_status():
+    """Get the current state of the Swarm."""
+    from core.task_manager import get_swarm_status
+    return {"swarm_enabled": get_swarm_status()}
+
+

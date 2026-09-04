@@ -28,6 +28,9 @@ const showPlanFeatureBtn = document.getElementById('show-plan-feature-modal');
 const planFeatureModal = document.getElementById('plan-feature-modal');
 const planFeatureForm = document.getElementById('plan-feature-form');
 
+const swarmToggleBtn = document.getElementById('swarm-toggle-btn');
+let swarmEnabled = false;
+
 const modalCloseBtns = document.querySelectorAll('.modal-close');
 
 // --- Init & Auth ---
@@ -35,6 +38,11 @@ async function init() {
     if (authToken) {
         const valid = await checkToken(authToken);
         if (valid) {
+            try {
+                const swarmRes = await apiCall('/swarm/status');
+                swarmEnabled = swarmRes.swarm_enabled;
+                if(swarmToggleBtn) updateSwarmUI();
+            } catch(e) {}
             showDashboard();
             return;
         }
@@ -114,6 +122,34 @@ modalCloseBtns.forEach(btn => {
         if (planFeatureModal) planFeatureModal.classList.add('hidden');
     });
 });
+
+if (swarmToggleBtn) {
+    swarmToggleBtn.addEventListener('click', async () => {
+        swarmEnabled = !swarmEnabled;
+        updateSwarmUI();
+        try {
+            await apiCall('/swarm/toggle', { method: 'POST', body: { enabled: swarmEnabled } });
+        } catch(e) {
+            swarmEnabled = !swarmEnabled; // revert on fail
+            updateSwarmUI();
+            alert("Failed to toggle Swarm. Check connection.");
+        }
+    });
+}
+
+function updateSwarmUI() {
+    if (swarmEnabled) {
+        swarmToggleBtn.textContent = '🛑 Stop Auto-Swarm';
+        swarmToggleBtn.style.background = 'rgba(220, 38, 38, 0.2)';
+        swarmToggleBtn.style.color = 'var(--error)';
+        swarmToggleBtn.style.borderColor = 'var(--error)';
+    } else {
+        swarmToggleBtn.textContent = '🚀 Start Auto-Swarm';
+        swarmToggleBtn.style.background = '';
+        swarmToggleBtn.style.color = 'var(--accent)';
+        swarmToggleBtn.style.borderColor = 'var(--accent)';
+    }
+}
 
 // --- API Interactions ---
 async function apiCall(endpoint, options = {}) {
