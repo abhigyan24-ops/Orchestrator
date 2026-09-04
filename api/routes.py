@@ -37,8 +37,7 @@ class TaskCreate(BaseModel):
 class PlanFeatureRequest(BaseModel):
     project_id: str
     feature_description: str
-
-
+    repo_url: str
 
 @router.get("/credentials")
 async def get_credentials():
@@ -142,7 +141,8 @@ async def background_plan_feature(job_id: str, req: PlanFeatureRequest):
                 brief=brief,
                 acceptance_criteria=ac,
                 complexity_score=t.get("complexity_score", 1),
-                depends_on=dep_id
+                depends_on=dep_id,
+                repo_url=req.repo_url
             )
             created_task_ids[db_task.title] = db_task.id
             

@@ -266,6 +266,7 @@ if (planFeatureForm) {
         
         const payload = {
             project_id: document.getElementById('plan-project').value,
+            repo_url: document.getElementById('plan-repo').value,
             feature_description: document.getElementById('plan-desc').value
         };
         
