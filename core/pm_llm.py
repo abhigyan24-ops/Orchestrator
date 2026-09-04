@@ -18,8 +18,8 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
     primary_model = os.environ.get("PRIMARY_PM_MODEL", "openai/custom-model")
     
     fallback_key = os.environ.get("FALLBACK_PM_KEY")
-    # Defaulting to Groq's fast Llama-3 for the fallback if none specified
-    fallback_model = os.environ.get("FALLBACK_PM_MODEL", "groq/llama3-8b-8192")
+    # Defaulting to Groq's fast Llama-3.1 for the fallback if none specified
+    fallback_model = os.environ.get("FALLBACK_PM_MODEL", "groq/llama-3.1-8b-instant")
 
     kwargs = {"messages": messages}
     if require_json:
