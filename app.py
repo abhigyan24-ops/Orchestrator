@@ -13,9 +13,18 @@ from api.dashboard import router as dashboard_router
 from db.connection import init_pool, close_pool
 
 
+# Create FastMCP Streamable HTTP subapp (handles both POST and GET on /mcp per MCP spec)
+if hasattr(mcp, "streamable_http_app"):
+    mcp_subapp = mcp.streamable_http_app(path="/")
+elif hasattr(mcp, "http_app"):
+    mcp_subapp = mcp.http_app(path="/", transport="streamable-http")
+else:
+    mcp_subapp = getattr(mcp, "app", None) or getattr(mcp, "_app", None)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle hook for FastAPI to manage the DB connection pool."""
+    """Lifecycle hook for FastAPI to manage the DB connection pool and MCP session manager."""
     load_dotenv()
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
@@ -25,7 +34,11 @@ async def lifespan(app: FastAPI):
     await init_pool(db_url)
     print("Database connected.")
     
-    yield
+    if mcp_subapp and hasattr(mcp_subapp, "lifespan"):
+        async with mcp_subapp.lifespan(app):
+            yield
+    else:
+        yield
     
     print("Closing database connection...")
     await close_pool()
@@ -69,23 +82,10 @@ async def health_check():
     return {"status": "ok", "service": "multi-agent-orchestrator"}
 
 
-@app.get("/mcp")
-@app.get("/mcp/")
-async def mcp_redirect():
-    """Redirect /mcp to /mcp/sse for SSE clients."""
-    return RedirectResponse(url="/mcp/sse", status_code=307)
-
-
-# Mount FastMCP SSE transport
-if hasattr(mcp, "http_app"):
-    mcp_subapp = mcp.http_app(transport="sse")
+# Mount FastMCP Streamable HTTP transport at /mcp
+# Handles both POST (for JSON-RPC messages) and GET (for SSE stream) on the same /mcp path
+if mcp_subapp:
     app.mount("/mcp", mcp_subapp)
-elif hasattr(mcp, "add_to_fastapi"):
-    mcp.add_to_fastapi(app, prefix="/mcp")
-else:
-    starlette_app = getattr(mcp, "app", None) or getattr(mcp, "_app", None)
-    if starlette_app:
-        app.mount("/mcp", starlette_app)
 
 
 # Mount the static dashboard at the root
