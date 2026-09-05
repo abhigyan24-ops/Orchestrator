@@ -110,7 +110,24 @@ class GitAgent:
             async with session.post(api_url, headers=headers, json=payload) as resp:
                 if resp.status != 201:
                     error_text = await resp.text()
-                    # If base branch failed (e.g. 422 invalid base), query default branch and retry
+
+                    # Case 1: If PR already exists for this branch (e.g. on task retry), reuse it!
+                    if resp.status == 422 and "A pull request already exists" in error_text:
+                        print(f"GitAgent: Open Pull Request already exists for {branch_name}. Finding existing PR...")
+                        find_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls?head={self.owner}:{branch_name}&state=open"
+                        async with session.get(find_url, headers=headers) as find_resp:
+                            if find_resp.status == 200:
+                                prs = await find_resp.json()
+                                if prs:
+                                    existing_pr = prs[0]
+                                    print(f"GitAgent: Reusing existing PR #{existing_pr['number']}: {existing_pr['html_url']}")
+                                    # Update title & body to reflect current task details
+                                    patch_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{existing_pr['number']}"
+                                    async with session.patch(patch_url, headers=headers, json={"title": title, "body": body}):
+                                        pass
+                                    return existing_pr["html_url"]
+
+                    # Case 2: If base branch failed (e.g. 422 invalid base), query default branch and retry
                     if resp.status == 422:
                         repo_meta_url = f"https://api.github.com/repos/{self.owner}/{self.repo}"
                         async with session.get(repo_meta_url, headers=headers) as meta_resp:
@@ -124,6 +141,7 @@ class GitAgent:
                                         if retry_resp.status == 201:
                                             retry_data = await retry_resp.json()
                                             return retry_data.get("html_url", "")
+
                     raise RuntimeError(f"Failed to create PR: {resp.status} - {error_text}")
                 
                 data = await resp.json()
