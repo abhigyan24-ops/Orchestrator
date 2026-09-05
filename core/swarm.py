@@ -139,7 +139,7 @@ Please write the code for this task:"""
             pr_number = int(pr_url.split('/')[-1])
             await devops.auto_merge_pr(pr_number, commit_msg)
             
-        await update_task_status(task_id, TaskStatus.COMPLETED)
+        await update_task_status(task_id, TaskStatus.DONE)
         
     except Exception as e:
         print(f"Swarm Error on Task #{task_id}: {e}")

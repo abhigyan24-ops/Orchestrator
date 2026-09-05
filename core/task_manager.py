@@ -325,12 +325,22 @@ async def list_tasks(
             return await _execute(c)
 
 async def update_task_status(task_id: int, status: str, assigned_agent: Optional[str] = None):
-    """Helper to update a task's status for the Swarm."""
+    """Helper to update a task's status for the Swarm and unblock dependent tasks."""
     async with get_connection() as c:
         if assigned_agent:
             await c.execute("UPDATE tasks SET status = $1, assigned_tool = $2, updated_at = NOW() WHERE id = $3", status, assigned_agent, task_id)
         else:
             await c.execute("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", status, task_id)
+            
+        if status in (TaskStatus.DONE, "done"):
+            await c.execute(
+                """
+                UPDATE tasks 
+                SET status = 'ready', updated_at = NOW() 
+                WHERE depends_on = $1 AND status = 'blocked'
+                """,
+                task_id
+            )
 
 import asyncio
 

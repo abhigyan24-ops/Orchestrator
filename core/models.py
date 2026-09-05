@@ -11,6 +11,7 @@ class TaskStatus(str, Enum):
     BLOCKED = "blocked"
     IN_PROGRESS = "in_progress"
     DONE = "done"
+    COMPLETED = "done"
     FAILED = "failed"
     WAITING_QUOTA = "waiting_quota"
 

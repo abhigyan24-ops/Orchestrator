@@ -195,4 +195,13 @@ async def retry_failed_tasks():
         return {"status": "success", "message": res}
 
 
+@router.post("/tasks/{task_id}/done")
+async def mark_task_done(task_id: int):
+    """Mark a task done and unblock its dependents."""
+    from core.task_manager import update_task_status
+    await update_task_status(task_id, TaskStatus.DONE, assigned_agent="QA Agent")
+    return {"status": "success", "message": f"Task #{task_id} marked as done and dependents unblocked."}
+
+
+
 
