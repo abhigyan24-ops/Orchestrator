@@ -39,12 +39,15 @@ class PlanFeatureRequest(BaseModel):
     feature_description: str
     repo_url: str
 
+DEFAULT_USER_ID = "owner"
+
 @router.get("/credentials")
 async def get_credentials():
-    """Get all configured credentials (without exposing the raw encrypted api_key)."""
+    """Get all configured credentials for current user (without exposing the raw encrypted api_key)."""
     async with get_connection() as conn:
         rows = await conn.fetch(
-            "SELECT id, tool_name, account_label, sequence_order, status, tool_type FROM api_credentials ORDER BY tool_name, sequence_order"
+            "SELECT id, tool_name, account_label, sequence_order, status, tool_type, user_id FROM api_credentials WHERE user_id = $1 ORDER BY tool_name, sequence_order",
+            DEFAULT_USER_ID
         )
         return [dict(r) for r in rows]
 
@@ -57,10 +60,10 @@ async def add_credential(cred: CredentialCreate):
         try:
             await conn.execute(
                 """
-                INSERT INTO api_credentials (tool_name, account_label, api_key, sequence_order, status, tool_type)
-                VALUES ($1, $2, $3, $4, 'available', $5)
+                INSERT INTO api_credentials (tool_name, account_label, api_key, sequence_order, status, tool_type, user_id)
+                VALUES ($1, $2, $3, $4, 'available', $5, $6)
                 """,
-                cred.tool_name, cred.account_label, encrypted_key, cred.sequence_order, cred.tool_type
+                cred.tool_name, cred.account_label, encrypted_key, cred.sequence_order, cred.tool_type, DEFAULT_USER_ID
             )
             return {"status": "success", "message": f"Credential for {cred.tool_name} added successfully."}
         except Exception as e:
@@ -71,7 +74,7 @@ async def add_credential(cred: CredentialCreate):
 async def delete_credential(cred_id: int):
     """Delete a credential by ID."""
     async with get_connection() as conn:
-        await conn.execute("DELETE FROM api_credentials WHERE id = $1", cred_id)
+        await conn.execute("DELETE FROM api_credentials WHERE id = $1 AND user_id = $2", cred_id, DEFAULT_USER_ID)
         return {"status": "success"}
 
 

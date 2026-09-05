@@ -76,9 +76,14 @@ CREATE TABLE IF NOT EXISTS api_credentials (
                     CHECK (tool_type IN (
                         'api_based', 'ide_native'
                     )),
+    -- Forward-compatible for multi-user BYOK (bring-your-own-key) support.
+    -- Currently single-tenant default 'owner'; do not remove when adding multi-user auth later.
+    user_id         TEXT NOT NULL DEFAULT 'owner',
 
     UNIQUE (tool_name, account_label)
 );
+
+COMMENT ON COLUMN api_credentials.user_id IS 'This column exists in preparation for per-user BYOK (bring-your-own-key) support. Currently single-tenant; do not remove this column when adding real multi-user auth later — build on top of it.';
 
 -- ---------------------------------------------------------
 -- quota_status: per-(tool, model) quota tracking.

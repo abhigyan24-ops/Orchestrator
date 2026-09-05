@@ -166,13 +166,13 @@ async def report_progress(
             await log_event(t_name, exhausted_model, QuotaEvent.QUOTA_EXCEEDED, task_id, raw_response, conn=c)
             
             # Determine tool type and fallback message
-            tool_row = await c.fetchrow("SELECT tool_type FROM api_credentials WHERE tool_name = $1 LIMIT 1", t_name)
+            tool_row = await c.fetchrow("SELECT tool_type FROM api_credentials WHERE tool_name = $1 AND user_id = 'owner' LIMIT 1", t_name)
             tool_type = tool_row['tool_type'] if tool_row else 'ide_native'
 
             if tool_type == 'api_based':
                 # Mark current active credential as exhausted
                 curr_cred_row = await c.fetchrow(
-                    "SELECT id, account_label FROM api_credentials WHERE tool_name = $1 AND status = 'available' ORDER BY sequence_order ASC LIMIT 1",
+                    "SELECT id, account_label FROM api_credentials WHERE tool_name = $1 AND user_id = 'owner' AND status = 'available' ORDER BY sequence_order ASC LIMIT 1",
                     t_name
                 )
                 if curr_cred_row:

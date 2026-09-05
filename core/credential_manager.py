@@ -7,8 +7,11 @@ from core.models import ApiCredential
 from core.encryption import decrypt_key
 
 
+DEFAULT_USER_ID = "owner"
+
+
 async def get_next_credential(
-    tool_name: str, conn: Optional[Connection] = None
+    tool_name: str, user_id: str = DEFAULT_USER_ID, conn: Optional[Connection] = None
 ) -> Optional[ApiCredential]:
     """Get the next available credential for a tool, ordered by sequence_order.
     The returned credential will have its api_key decrypted in memory.
@@ -16,13 +19,13 @@ async def get_next_credential(
     async def _execute(c: Connection):
         row = await c.fetchrow(
             """
-            SELECT id, tool_name, account_label, api_key, sequence_order, status, tool_type
+            SELECT id, tool_name, account_label, api_key, sequence_order, status, tool_type, user_id
             FROM api_credentials
-            WHERE tool_name = $1 AND status = 'available'
+            WHERE tool_name = $1 AND user_id = $2 AND status = 'available'
             ORDER BY sequence_order ASC
             LIMIT 1
             """,
-            tool_name
+            tool_name, user_id
         )
         if row:
             cred_dict = dict(row)

@@ -1,6 +1,8 @@
 import os
 import re
 import sys
+import shutil
+import stat
 import tempfile
 import subprocess
 from core.models import Task, TaskStatus
@@ -184,6 +186,7 @@ Please write the implementation and test code for this task:"""
     await update_task_status(task_id, TaskStatus.IN_PROGRESS, assigned_agent="Worker Agent")
     print(f"Swarm: Worker Agent is coding...")
     
+    push_successful = False
     try:
         raw_code_response = _call_pm_llm(messages)
         files_to_write = extract_code_blocks(raw_code_response, default_filename=default_name)
@@ -208,6 +211,7 @@ Please write the implementation and test code for this task:"""
         commit_msg = f"Task #{task_id}: {title}\n\n{brief}"
         devops.commit_changes(commit_msg)
         devops.push_branch(branch_name)
+        push_successful = True
         
         # Open PR
         pr_url = await devops.create_pull_request(
@@ -250,3 +254,18 @@ Please write the implementation and test code for this task:"""
     except Exception as e:
         print(f"Swarm Error on Task #{task_id}: {e}")
         await update_task_status(task_id, TaskStatus.FAILED, result_summary=f"Swarm Error: {str(e)}")
+    finally:
+        if push_successful and os.path.exists(workspace_dir):
+            try:
+                def _on_rm_error(func, p, exc_info):
+                    try:
+                        os.chmod(p, stat.S_IWRITE)
+                        func(p)
+                    except Exception:
+                        pass
+                shutil.rmtree(workspace_dir, onerror=_on_rm_error)
+                print(f"Swarm: Cleaned up workspace directory {workspace_dir} after successful push.")
+            except Exception as cleanup_err:
+                print(f"Swarm: Warning: Could not remove workspace directory {workspace_dir}: {cleanup_err}")
+        elif not push_successful:
+            print(f"Swarm: Preserving workspace directory {workspace_dir} for debugging (git push was not successful).")

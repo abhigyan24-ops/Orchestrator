@@ -5,15 +5,18 @@ import asyncio
 import aiohttp
 from typing import Optional
 
-async def _get_github_pat() -> str:
+DEFAULT_USER_ID = "owner"
+
+async def _get_github_pat(user_id: str = DEFAULT_USER_ID) -> str:
     from db.connection import get_connection
     from core.encryption import decrypt_key
     async with get_connection() as conn:
         row = await conn.fetchrow(
-            "SELECT api_key FROM api_credentials WHERE tool_name = 'GitHub PAT' LIMIT 1"
+            "SELECT api_key FROM api_credentials WHERE tool_name = 'GitHub PAT' AND user_id = $1 LIMIT 1",
+            user_id
         )
         if not row:
-            raise RuntimeError("GitHub PAT not found in API Credentials. Cannot push code.")
+            raise RuntimeError(f"GitHub PAT not found in API Credentials for user '{user_id}'. Cannot push code.")
         return decrypt_key(row['api_key'])
 
 def extract_owner_repo(repo_url: str) -> tuple[str, str]:

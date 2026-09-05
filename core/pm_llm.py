@@ -8,55 +8,106 @@ litellm.telemetry = False
 # We use litellm.completion which natively supports OpenAI-compatible endpoints
 # like Ollama/vLLM (our Primary) and commercial endpoints like Groq/Gemini (Fallback).
 
+# ==============================================================================
+# ARCHITECTURAL POLICY: Option A (Cloud-First for Hosted, Local for Dev)
+# - Local Ollama (http://localhost:11434/v1) is a developer convenience ONLY
+#   for local development via PRIMARY_PM_URL.
+# - It is NEVER a dependency of the hosted/Render service.
+# - On Render (or whenever Ollama is absent), the cloud fallback chain executes
+#   100% autonomously without requiring any tunnel or local machine uptime:
+#     Priority 1: Groq (via FALLBACK_PM_KEY / GROQ_API_KEY)
+#     Priority 2: Google AI Studio (via GEMINI_API_KEY)
+#     Priority 3: OpenRouter Free Tier (via OPENROUTER_API_KEY)
+# ==============================================================================
+
 def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
     """
-    Calls the Project Manager LLM using a robust Primary -> Fallback strategy.
-    Primary: Self-hosted local model (e.g., Ollama via Ngrok)
-    Fallback: Cloud API (e.g., Groq or Gemini)
+    Calls the PM/Worker/QA LLM using a cloud-first fallback chain.
+    If PRIMARY_PM_URL is provided (local dev), it attempts it first.
+    Otherwise, it immediately falls through to the free-tier cloud chain.
     """
     primary_url = (os.environ.get("PRIMARY_PM_URL") or "").strip()
-    primary_model = (os.environ.get("PRIMARY_PM_MODEL") or "openai/custom-model").strip()
-    
-    fallback_key = (os.environ.get("FALLBACK_PM_KEY") or "").strip()
-    # Defaulting to Groq's GPT-OSS-20B (free tier) for the fallback
-    fallback_model = (os.environ.get("FALLBACK_PM_MODEL") or "groq/openai/gpt-oss-20b").strip()
+    primary_model = (os.environ.get("PRIMARY_PM_MODEL") or "openai/llama3.1").strip()
+
+    groq_key = (os.environ.get("FALLBACK_PM_KEY") or os.environ.get("GROQ_API_KEY") or "").strip()
+    groq_model = (os.environ.get("FALLBACK_PM_MODEL") or "groq/openai/gpt-oss-20b").strip()
+
+    gemini_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    gemini_model = (os.environ.get("GEMINI_PM_MODEL") or "gemini/gemini-2.0-flash").strip()
+
+    openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    openrouter_model = (os.environ.get("OPENROUTER_PM_MODEL") or "openrouter/auto").strip()
 
     kwargs = {"messages": messages}
     if require_json:
         kwargs["response_format"] = {"type": "json_object"}
 
-    try:
-        if not primary_url:
-            raise ValueError("No PRIMARY_PM_URL configured.")
-            
-        print(f"PM LLM: Attempting Primary ({primary_model} at {primary_url})")
-        # For OpenAI compatible endpoints, litellm uses the 'openai/' prefix
-        model_name = primary_model if primary_model.startswith("openai/") else f"openai/{primary_model}"
-        
-        response = litellm.completion(
-            model=model_name,
-            api_base=primary_url,
-            api_key="sk-dummy", # required by standard but ignored by local servers
-            **kwargs
-        )
-        return response.choices[0].message.content
-        
-    except Exception as e:
-        print(f"PM LLM: Primary failed ({e}). Attempting Fallback...")
-        
-        if not fallback_key:
-            raise RuntimeError(f"PM LLM: Primary failed and no FALLBACK_PM_KEY configured. Primary error: {e}")
-            
-        # litellm infers the provider from the model string (e.g., 'groq/...', 'gemini/...')
-        # We temporarily set the env vars it expects based on common providers
-        os.environ["GROQ_API_KEY"] = fallback_key
-        os.environ["GEMINI_API_KEY"] = fallback_key
-        
-        response = litellm.completion(
-            model=fallback_model,
-            **kwargs
-        )
-        return response.choices[0].message.content
+    # 1. Local Developer Convenience (Only attempted if explicitly configured in local .env)
+    if primary_url:
+        try:
+            print(f"PM LLM: Attempting Local Dev Provider ({primary_model} at {primary_url})")
+            model_name = primary_model if primary_model.startswith("openai/") else f"openai/{primary_model}"
+            response = litellm.completion(
+                model=model_name,
+                api_base=primary_url,
+                api_key="sk-dummy",
+                timeout=15,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"PM LLM: Local dev provider unavailable or bypassed ({e}). Falling through to cloud chain...")
+
+    # 2. Cloud Fallback Chain
+    errors = []
+
+    # Priority 1: Groq
+    if groq_key:
+        try:
+            print(f"PM LLM: Calling Cloud Provider 1: Groq ({groq_model})")
+            os.environ["GROQ_API_KEY"] = groq_key
+            response = litellm.completion(
+                model=groq_model,
+                api_key=groq_key,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"PM LLM: Groq failed ({e}). Proceeding to next cloud fallback...")
+            errors.append(f"Groq: {e}")
+
+    # Priority 2: Google Gemini (AI Studio)
+    if gemini_key:
+        try:
+            print(f"PM LLM: Calling Cloud Provider 2: Google Gemini ({gemini_model})")
+            os.environ["GEMINI_API_KEY"] = gemini_key
+            response = litellm.completion(
+                model=gemini_model,
+                api_key=gemini_key,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"PM LLM: Gemini failed ({e}). Proceeding to next cloud fallback...")
+            errors.append(f"Gemini: {e}")
+
+    # Priority 3: OpenRouter Free Tier
+    if openrouter_key:
+        try:
+            print(f"PM LLM: Calling Cloud Provider 3: OpenRouter ({openrouter_model})")
+            os.environ["OPENROUTER_API_KEY"] = openrouter_key
+            response = litellm.completion(
+                model=openrouter_model,
+                api_key=openrouter_key,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"PM LLM: OpenRouter failed ({e}).")
+            errors.append(f"OpenRouter: {e}")
+
+    err_details = "; ".join(errors) if errors else "No cloud provider keys configured (set FALLBACK_PM_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY)."
+    raise RuntimeError(f"PM LLM Cloud Fallback Chain Exhausted: {err_details}")
 
 def decompose_feature(project_id: str, feature_description: str, project_context: str) -> list[dict]:
     """

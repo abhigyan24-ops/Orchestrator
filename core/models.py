@@ -88,6 +88,7 @@ class ApiCredential(BaseModel):
     sequence_order: int
     status: CredentialStatus
     tool_type: ToolType
+    user_id: Optional[str] = "owner"
 
 
 class QuotaStatus(BaseModel):

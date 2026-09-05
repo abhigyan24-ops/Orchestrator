@@ -59,18 +59,42 @@ Tests run against a real Postgres instance defined by `TEST_DATABASE_URL` in `.e
 pytest tests/ -v
 ```
 
+## PM LLM & Autonomous Swarm Architecture
+
+The Orchestrator features an autonomous multi-agent swarm (PM Agent, Worker Agent, DevOps Agent, and QA Agent) powered by a tiered LLM execution chain:
+
+### Option A: Cloud-First Production with Local Dev Convenience
+- **Render / Production Service:** Runs 100% autonomously in the cloud using a free-tier cloud fallback chain:
+  1. **Groq:** `FALLBACK_PM_KEY` (e.g., `groq/openai/gpt-oss-20b` or Llama 3 models)
+  2. **Google Gemini:** `GEMINI_API_KEY` (e.g., `gemini/gemini-2.0-flash` via Google AI Studio)
+  3. **OpenRouter:** `OPENROUTER_API_KEY` (open-source / free router models)
+  *Zero tunnels, zero local dependencies, and zero reliance on local machine uptime.*
+- **Local Development Override:** For developers running local models (e.g., Ollama), set `PRIMARY_PM_URL=http://localhost:11434/v1` in your local `.env`. When set locally, the system attempts the local model first; if unreachable or unset, it immediately cascades to the cloud chain.
+
+### Automated Workspace Cleanup & Safety
+- Swarm tasks clone target repositories into isolated temporary workspaces (`tempfile.gettempdir()`).
+- Upon successful task completion, test verification, and git push (`push_successful == True`), the temporary workspace directory is automatically cleaned up.
+- If git push fails or an unhandled crash occurs before pushing, the workspace is intentionally preserved for developer inspection and debugging.
+
+### Multi-Tenant BYOK Forward Compatibility
+- The `api_credentials` table includes a nullable `user_id` column (default `'owner'`) to support future multi-tenant Bring-Your-Own-Key (BYOK) credential pools. All system operations currently query by `user_id = 'owner'`, maintaining complete backwards compatibility without adding complexity to other tables.
+
 ## Deployment (Render.com)
 
-1. Create a **PostgreSQL** instance on Render.
+1. Create a **PostgreSQL** instance on Render (or use Neon Serverless Postgres).
 2. Create a **Web Service** tied to your repository.
 3. **Build Command:** `pip install -r requirements.txt`
 4. **Start Command:** `uvicorn app:app --host 0.0.0.0 --port $PORT`
 5. **Environment Variables:**
-   - `DATABASE_URL` (Internal DB URL provided by Render)
-   - `ENCRYPTION_KEY`
-   - `MCP_AUTH_TOKEN`
-   - `DASHBOARD_USERNAME` (HTTP Basic Auth username for `/dashboard`)
-   - `DASHBOARD_PASSWORD` (HTTP Basic Auth password for `/dashboard`)
+   - `DATABASE_URL`: Connection string for PostgreSQL
+   - `ENCRYPTION_KEY`: 32-byte url-safe base64 Fernet key
+   - `MCP_AUTH_TOKEN`: Bearer token for client SSE authorization
+   - `DASHBOARD_USERNAME`: HTTP Basic Auth username for `/dashboard`
+   - `DASHBOARD_PASSWORD`: HTTP Basic Auth password for `/dashboard`
+   - `FALLBACK_PM_KEY`: Free Groq API key for cloud PM/Worker/QA agents
+   - `GEMINI_API_KEY`: (Optional) Free Google AI Studio API key
+   - `OPENROUTER_API_KEY`: (Optional) Free OpenRouter API key
+   *(Note: Do NOT set `PRIMARY_PM_URL` on Render. Render operates entirely via the cloud fallback chain.)*
 
 Render handles routing and SSL termination.
 
@@ -93,3 +117,4 @@ In your AI tool's MCP configuration (e.g., Cursor, Claude Desktop), configure an
 }
 ```
 *(Note: Client configuration varies by agent. FastMCP natively supports SSE transports.)*
+
