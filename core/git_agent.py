@@ -1,5 +1,6 @@
 import os
 import subprocess
+import asyncio
 import aiohttp
 from typing import Optional
 
@@ -132,7 +133,13 @@ class GitAgent:
         
         print(f"GitAgent/QA: Merging Pull Request #{pr_number}...")
         async with aiohttp.ClientSession() as session:
-            async with session.put(api_url, headers=headers, json=payload) as resp:
-                if resp.status not in (200, 201):
+            for attempt in range(3):
+                async with session.put(api_url, headers=headers, json=payload) as resp:
+                    if resp.status in (200, 201):
+                        return
                     error_text = await resp.text()
+                    if resp.status == 405 and attempt < 2:
+                        print(f"GitAgent/QA: PR #{pr_number} merge pending (status 405), waiting 2s before retry (attempt {attempt + 1}/3)...")
+                        await asyncio.sleep(2)
+                        continue
                     raise RuntimeError(f"Failed to merge PR: {resp.status} - {error_text}")
