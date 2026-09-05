@@ -1,10 +1,13 @@
 import os
 import re
+import sys
+import tempfile
 import subprocess
 from core.models import Task, TaskStatus
 from core.task_manager import update_task_status
 from core.pm_llm import _call_pm_llm
 from core.git_agent import GitAgent
+from core.qa_runner import verify_and_run_task_tests, check_cascading_dependency_health
 
 def extract_code_blocks(text: str, default_filename: str = "src/app.js") -> dict[str, str]:
     """
@@ -89,8 +92,8 @@ def extract_code_blocks(text: str, default_filename: str = "src/app.js") -> dict
 
 async def execute_task_with_swarm(task_id: int):
     """
-    Spins up the Worker Agent for the task, generates code, 
-    and uses the GitAgent to PR it.
+    Spins up the Worker Agent for the task, executes code generation,
+    runs the test suite via QA Agent, and auto-merges ONLY if tests pass.
     """
     print(f"Swarm: Assigning Task #{task_id} to a Worker Agent...")
     
@@ -107,11 +110,36 @@ async def execute_task_with_swarm(task_id: int):
     brief = task['brief']
     ac = task['acceptance_criteria']
     repo_url = task.get('repo_url')
+    depends_on = task.get('depends_on')
     
     if not repo_url:
         print(f"Swarm: Task #{task_id} has no repo_url. Cannot run DevOps agent.")
-        await update_task_status(task_id, TaskStatus.FAILED, assigned_agent="Swarm Error")
+        await update_task_status(task_id, TaskStatus.FAILED, assigned_agent="Swarm Error", result_summary="Error: Task has no repo_url")
         return
+
+    workspace_dir = os.path.join(tempfile.gettempdir(), f"orchestrator_workspace_{project_id}")
+    devops = GitAgent(repo_url=repo_url, working_dir=workspace_dir)
+
+    # Clone repo or sync to latest main
+    await devops.clone_repo()
+    subprocess.run(["git", "fetch", "origin", "main"], cwd=workspace_dir, check=False)
+    subprocess.run(["git", "clean", "-fd"], cwd=workspace_dir, check=False)
+    subprocess.run(["git", "checkout", "-f", "-B", "main", "origin/main"], cwd=workspace_dir, check=False)
+    subprocess.run(["git", "pull", "origin", "main"], cwd=workspace_dir, check=False)
+
+    # 2. Cascading Failure Containment Check
+    # Before dispatching, verify that if this task depends on a merged task, current main is still green.
+    if depends_on:
+        is_healthy, dep_msg = await check_cascading_dependency_health(workspace_dir, depends_on)
+        if not is_healthy:
+            print(f"Swarm: Cascading Failure Containment triggered! {dep_msg}")
+            await update_task_status(
+                task_id,
+                TaskStatus.BLOCKED,
+                assigned_agent="QA Cascading Containment",
+                result_summary=dep_msg
+            )
+            return
 
     category = task.get('category', '').lower()
     default_name = "src/app.js"
@@ -126,13 +154,16 @@ async def execute_task_with_swarm(task_id: int):
     elif category in ("infra", "devops"):
         default_name = ".github/workflows/deploy.yml"
 
-    # 2. Worker Agent LLM Call
+    # 3. Worker Agent LLM Call
     system_prompt = f"""You are an elite Autonomous AI Developer specializing in {task['category']} tasks.
 Your job is to read the task description and write ALL the necessary implementation code to fulfill the acceptance criteria.
 
 CRITICAL INSTRUCTIONS:
 - You MUST output the actual runnable code inside standard markdown code blocks.
 - Place the relative file path on the first line after the backticks (e.g. ```{default_name}).
+- MANDATORY TEST GENERATION: Every task that produces code MUST include an appropriate test file (e.g. ```tests/task.test.js or ```tests/test_feature.py).
+  Tests MUST contain real, meaningful assertions (assert, expect, assertEqual) that verify behavior. Empty or fake tests (e.g. assert True) will be strictly rejected by the QA Agent.
+- For JavaScript projects with ES modules ("type": "module"), use ES module `import ... from ...` (e.g. `import assert from 'node:assert'; import fs from 'node:fs';`) rather than CommonJS `require()`.
 - Do NOT output bash command snippets or setup advice like 'npm install'. Write the actual source file code.
 - Write all files needed to complete this task."""
 
@@ -143,7 +174,7 @@ Description: {brief}
 Acceptance Criteria:
 {ac}
 
-Please write the code for this task:"""
+Please write the implementation and test code for this task:"""
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -162,19 +193,7 @@ Please write the code for this task:"""
             
         print(f"Swarm: Worker Agent generated {len(files_to_write)} files.")
         
-        # 3. DevOps Agent Pipeline
-        workspace_dir = f"/tmp/orchestrator_workspace_{project_id}"
-        devops = GitAgent(repo_url=repo_url, working_dir=workspace_dir)
-        
-        # Clone repo or sync to latest main
-        if not os.path.exists(workspace_dir):
-            await devops.clone_repo()
-        else:
-            subprocess.run(["git", "fetch", "origin", "main"], cwd=workspace_dir, check=False)
-            subprocess.run(["git", "clean", "-fd"], cwd=workspace_dir, check=False)
-            subprocess.run(["git", "checkout", "-f", "-B", "main", "origin/main"], cwd=workspace_dir, check=False)
-            subprocess.run(["git", "pull", "origin", "main"], cwd=workspace_dir, check=False)
-            
+        # 4. DevOps Agent Branching
         branch_name = f"feature/task-{task_id}-{title.lower().replace(' ', '-')}"
         devops.create_branch(branch_name, "main")
         
@@ -198,11 +217,36 @@ Please write the code for this task:"""
         )
         print(f"Swarm: PR Created! {pr_url}")
         
-        # 4. QA Agent - Auto-merge disabled for ALL tiers (manual review required)
-        print(f"Swarm: Auto-merge is DISABLED for all tiers. PR #{pr_url.split('/')[-1]} left OPEN for manual developer review: {pr_url}")
-            
-        await update_task_status(task_id, TaskStatus.DONE)
+        # 5. QA Agent - Automated Test-Gated Merging
+        print(f"Swarm: QA Agent running automated test-gated verification on branch {branch_name}...")
+        tests_passed, test_output = await verify_and_run_task_tests(workspace_dir, files_to_write)
         
+        pr_number = int(pr_url.split('/')[-1])
+        
+        if tests_passed:
+            print(f"Swarm: QA Agent Verified! All tests passed with ZERO failures. Auto-merging PR #{pr_number}...")
+            await devops.auto_merge_pr(pr_number, commit_msg)
+            print(f"Swarm: PR #{pr_number} successfully merged!")
+            
+            summary = f"TEST-GATED MERGE PASSED (Zero failures across all test suites).\nPR #{pr_number} merged successfully.\n\n--- Test Execution Log ---\n{test_output}"
+            await update_task_status(
+                task_id, 
+                TaskStatus.DONE, 
+                assigned_agent="QA Agent (Test-Gated)",
+                result_summary=summary,
+                pr_url=pr_url
+            )
+        else:
+            print(f"Swarm: QA Agent Blocked Merge! Tests failed or invalid for PR #{pr_number}. PR left open for manual review.")
+            summary = f"TEST-GATED MERGE BLOCKED (Tests failed or trivially fake).\nPR #{pr_number} left OPEN.\n\n--- Test Execution Log ---\n{test_output}"
+            await update_task_status(
+                task_id, 
+                TaskStatus.TESTS_FAILED, 
+                assigned_agent="QA Agent (Test-Gated)",
+                result_summary=summary,
+                pr_url=pr_url
+            )
+            
     except Exception as e:
         print(f"Swarm Error on Task #{task_id}: {e}")
-        await update_task_status(task_id, TaskStatus.FAILED)
+        await update_task_status(task_id, TaskStatus.FAILED, result_summary=f"Swarm Error: {str(e)}")

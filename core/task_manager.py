@@ -324,13 +324,26 @@ async def list_tasks(
         async with get_connection() as c:
             return await _execute(c)
 
-async def update_task_status(task_id: int, status: str, assigned_agent: Optional[str] = None):
-    """Helper to update a task's status for the Swarm and unblock dependent tasks."""
+async def update_task_status(
+    task_id: int, 
+    status: str, 
+    assigned_agent: Optional[str] = None,
+    result_summary: Optional[str] = None,
+    pr_url: Optional[str] = None
+):
+    """Helper to update a task's status for the Swarm, record outputs, and unblock dependent tasks."""
     async with get_connection() as c:
-        if assigned_agent:
-            await c.execute("UPDATE tasks SET status = $1, assigned_tool = $2, updated_at = NOW() WHERE id = $3", status, assigned_agent, task_id)
-        else:
-            await c.execute("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", status, task_id)
+        query = """
+            UPDATE tasks 
+            SET status = $1, 
+                assigned_tool = COALESCE($2, assigned_tool),
+                result_summary = COALESCE($3, result_summary),
+                pr_url = COALESCE($4, pr_url),
+                updated_at = NOW() 
+            WHERE id = $5
+        """
+        status_str = status.value if hasattr(status, 'value') else str(status)
+        await c.execute(query, status_str, assigned_agent, result_summary, pr_url, task_id)
             
         if status in (TaskStatus.DONE, "done"):
             await c.execute(

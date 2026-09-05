@@ -155,7 +155,7 @@
     /* Kanban Board */
     .kanban-grid {
       display: grid;
-      grid-template-columns: repeat(6, minmax(220px, 1fr));
+      grid-template-columns: repeat(7, minmax(210px, 1fr));
       gap: 1rem;
       overflow-x: auto;
       padding-bottom: 0.5rem;
@@ -186,8 +186,37 @@
     .col-in_progress { border-top: 3px solid var(--status-inprogress); color: var(--status-inprogress); }
     .col-blocked { border-top: 3px solid var(--status-blocked); color: var(--status-blocked); }
     .col-waiting_quota { border-top: 3px solid var(--status-waiting); color: var(--status-waiting); }
+    .col-tests_failed { border-top: 3px solid #f97316; color: #f97316; }
     .col-done { border-top: 3px solid var(--status-done); color: var(--status-done); }
     .col-failed { border-top: 3px solid var(--status-failed); color: var(--status-failed); }
+
+    .pr-badge {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .pr-badge:hover {
+      text-decoration: underline;
+    }
+
+    .test-output-preview {
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 4px;
+      padding: 0.35rem 0.5rem;
+      font-family: monospace;
+      font-size: 0.68rem;
+      color: #fca5a5;
+      white-space: pre-wrap;
+      max-height: 75px;
+      overflow-y: auto;
+      margin-top: 0.35rem;
+      line-height: 1.3;
+    }
 
     .col-count {
       background: rgba(255, 255, 255, 0.1);
@@ -458,7 +487,7 @@
 
   <script>
     (function () {
-      const STATUSES = ['ready', 'in_progress', 'blocked', 'waiting_quota', 'done', 'failed'];
+      const STATUSES = ['ready', 'in_progress', 'blocked', 'waiting_quota', 'tests_failed', 'done', 'failed'];
 
       function escapeHtml(str) {
         if (!str) return '';
@@ -507,7 +536,7 @@
           
           STATUSES.forEach(st => {
             const inStatus = pTasks.filter(t => t.status === st);
-            const statusLabel = st.replace('_', ' ');
+            const statusLabel = st === 'tests_failed' ? 'TESTS FAILED' : st.replace('_', ' ');
 
             html += `
               <div class="kanban-col col-${st}">
@@ -525,6 +554,18 @@
                   ? `${escapeHtml(t.assigned_tool)}${t.assigned_model ? ' (' + escapeHtml(t.assigned_model) + ')' : ''}` 
                   : 'Unassigned';
 
+                let prBadgeHtml = '';
+                if (t.pr_url) {
+                  const prNum = t.pr_url.split('/').filter(Boolean).pop();
+                  prBadgeHtml = `<a href="${escapeHtml(t.pr_url)}" target="_blank" class="pr-badge">PR #${escapeHtml(prNum)}</a>`;
+                }
+
+                let summaryHtml = '';
+                if (t.result_summary) {
+                  const snippet = t.result_summary.length > 250 ? t.result_summary.slice(0, 250) + '...' : t.result_summary;
+                  summaryHtml = `<div class="test-output-preview">${escapeHtml(snippet)}</div>`;
+                }
+
                 html += `
                   <div class="task-card">
                     <div class="card-title">${escapeHtml(t.title)}</div>
@@ -532,7 +573,9 @@
                       <span class="category-badge">${escapeHtml(t.category)}</span>
                       <span class="tool-badge">${toolInfo}</span>
                       ${t.depends_on ? `<span class="dep-badge">dep:#${t.depends_on}</span>` : ''}
+                      ${prBadgeHtml}
                     </div>
+                    ${summaryHtml}
                     <div class="card-updated">${escapeHtml(t.updated_at_str || '')}</div>
                   </div>`;
               });

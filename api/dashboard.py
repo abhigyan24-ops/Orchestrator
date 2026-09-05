@@ -71,7 +71,7 @@ async def fetch_dashboard_payload() -> Dict[str, Any]:
         # 1. Fetch all tasks
         task_rows = await conn.fetch("""
             SELECT id, project_id, title, category, status, depends_on, 
-                   assigned_tool, assigned_model, updated_at
+                   assigned_tool, assigned_model, updated_at, pr_url, result_summary
             FROM tasks
             ORDER BY id ASC
         """)

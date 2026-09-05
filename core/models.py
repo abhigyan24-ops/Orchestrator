@@ -14,6 +14,7 @@ class TaskStatus(str, Enum):
     COMPLETED = "done"
     FAILED = "failed"
     WAITING_QUOTA = "waiting_quota"
+    TESTS_FAILED = "tests_failed"
 
 
 class CredentialStatus(str, Enum):
