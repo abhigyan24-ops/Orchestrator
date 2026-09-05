@@ -14,12 +14,12 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
     Primary: Self-hosted local model (e.g., Ollama via Ngrok)
     Fallback: Cloud API (e.g., Groq or Gemini)
     """
-    primary_url = os.environ.get("PRIMARY_PM_URL")
-    primary_model = os.environ.get("PRIMARY_PM_MODEL", "openai/custom-model")
+    primary_url = (os.environ.get("PRIMARY_PM_URL") or "").strip()
+    primary_model = (os.environ.get("PRIMARY_PM_MODEL") or "openai/custom-model").strip()
     
-    fallback_key = os.environ.get("FALLBACK_PM_KEY")
+    fallback_key = (os.environ.get("FALLBACK_PM_KEY") or "").strip()
     # Defaulting to Groq's GPT-OSS-20B (free tier) for the fallback
-    fallback_model = os.environ.get("FALLBACK_PM_MODEL", "groq/openai/gpt-oss-20b")
+    fallback_model = (os.environ.get("FALLBACK_PM_MODEL") or "groq/openai/gpt-oss-20b").strip()
 
     kwargs = {"messages": messages}
     if require_json:

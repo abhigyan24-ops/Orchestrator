@@ -104,7 +104,8 @@ Please write the code for this task:"""
             await devops.clone_repo()
         else:
             subprocess.run(["git", "fetch", "origin"], cwd=workspace_dir, check=False)
-            subprocess.run(["git", "checkout", "main"], cwd=workspace_dir, check=False)
+            subprocess.run(["git", "checkout", "-f", "main"], cwd=workspace_dir, check=False)
+            subprocess.run(["git", "clean", "-fd"], cwd=workspace_dir, check=False)
             subprocess.run(["git", "pull", "origin", "main"], cwd=workspace_dir, check=False)
             
         branch_name = f"feature/task-{task_id}-{title.lower().replace(' ', '-')}"

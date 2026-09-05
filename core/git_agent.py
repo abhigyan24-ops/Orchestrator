@@ -61,9 +61,9 @@ class GitAgent:
             subprocess.run(["git", "push", "-u", "origin", "main"], cwd=self.working_dir, check=False)
 
     def create_branch(self, branch_name: str):
-        """Create and checkout a new branch."""
+        """Create and checkout a new branch (or reset if it already exists)."""
         print(f"GitAgent: Creating branch {branch_name}...")
-        subprocess.run(["git", "checkout", "-b", branch_name], cwd=self.working_dir, check=True, capture_output=True)
+        subprocess.run(["git", "checkout", "-B", branch_name], cwd=self.working_dir, check=True)
 
     def commit_changes(self, message: str):
         """Add all changes and commit."""
@@ -72,9 +72,9 @@ class GitAgent:
         subprocess.run(["git", "commit", "-m", message], cwd=self.working_dir, check=True)
 
     def push_branch(self, branch_name: str):
-        """Push the branch to the remote repository."""
+        """Push the branch to the remote repository (force push to handle retries cleanly)."""
         print(f"GitAgent: Pushing branch {branch_name} to origin...")
-        subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=self.working_dir, check=True, capture_output=True)
+        subprocess.run(["git", "push", "-u", "origin", branch_name, "--force"], cwd=self.working_dir, check=True)
 
     async def create_pull_request(self, branch_name: str, title: str, body: str, base_branch: str = "main") -> str:
         """Open a Pull Request on GitHub using the REST API."""
