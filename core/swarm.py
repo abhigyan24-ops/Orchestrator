@@ -1,5 +1,6 @@
 import os
 import re
+import subprocess
 from core.models import Task, TaskStatus
 from core.task_manager import update_task_status
 from core.pm_llm import _call_pm_llm
@@ -98,9 +99,13 @@ Please write the code for this task:"""
         workspace_dir = f"/tmp/orchestrator_workspace_{project_id}"
         devops = GitAgent(repo_url=repo_url, working_dir=workspace_dir)
         
-        # Clone repo
+        # Clone repo or sync to latest main
         if not os.path.exists(workspace_dir):
             await devops.clone_repo()
+        else:
+            subprocess.run(["git", "fetch", "origin"], cwd=workspace_dir, check=False)
+            subprocess.run(["git", "checkout", "main"], cwd=workspace_dir, check=False)
+            subprocess.run(["git", "pull", "origin", "main"], cwd=workspace_dir, check=False)
             
         branch_name = f"feature/task-{task_id}-{title.lower().replace(' ', '-')}"
         devops.create_branch(branch_name)

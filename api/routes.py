@@ -185,3 +185,14 @@ async def get_swarm_status():
     return {"swarm_enabled": get_swarm_status()}
 
 
+@router.post("/tasks/retry_failed")
+async def retry_failed_tasks():
+    """Reset any failed tasks to ready so the swarm can re-process them."""
+    async with get_connection() as conn:
+        res = await conn.execute(
+            "UPDATE tasks SET status = 'ready', assigned_tool = NULL WHERE status = 'failed'"
+        )
+        return {"status": "success", "message": res}
+
+
+

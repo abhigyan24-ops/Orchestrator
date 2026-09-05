@@ -137,6 +137,22 @@ if (swarmToggleBtn) {
     });
 }
 
+const retryFailedBtn = document.getElementById('retry-failed-btn');
+if (retryFailedBtn) {
+    retryFailedBtn.addEventListener('click', async () => {
+        const oldText = retryFailedBtn.textContent;
+        retryFailedBtn.textContent = 'Retrying...';
+        try {
+            await apiCall('/tasks/retry_failed', { method: 'POST' });
+            await loadTasks();
+        } catch(e) {
+            alert('Failed to retry tasks: ' + e.message);
+        } finally {
+            retryFailedBtn.textContent = oldText;
+        }
+    });
+}
+
 function updateSwarmUI() {
     if (swarmEnabled) {
         swarmToggleBtn.textContent = '🛑 Stop Auto-Swarm';
