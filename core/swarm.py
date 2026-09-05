@@ -198,13 +198,8 @@ Please write the code for this task:"""
         )
         print(f"Swarm: PR Created! {pr_url}")
         
-        # 4. QA Agent (Optional Auto-Merge for low tier tasks)
-        if task['complexity_score'] <= 3:
-            print("Swarm: QA Agent Auto-Approving PR...")
-            # In a real system, the QA agent would read the diff here. 
-            # We assume it passes for MVP.
-            pr_number = int(pr_url.split('/')[-1])
-            await devops.auto_merge_pr(pr_number, commit_msg)
+        # 4. QA Agent - Auto-merge disabled for ALL tiers (manual review required)
+        print(f"Swarm: Auto-merge is DISABLED for all tiers. PR #{pr_url.split('/')[-1]} left OPEN for manual developer review: {pr_url}")
             
         await update_task_status(task_id, TaskStatus.DONE)
         

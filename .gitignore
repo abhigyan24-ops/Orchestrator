@@ -44,4 +44,5 @@ docker/pgdata/
 
 # Local test outputs
 expense_tracker/
+scratch/
 

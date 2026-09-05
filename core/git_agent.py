@@ -171,7 +171,8 @@ class GitAgent:
                 return data.get("html_url", "")
                 
     async def auto_merge_pr(self, pr_number: int, commit_message: str):
-        """Merge a PR automatically (used by the QA Agent if the code passes)."""
+        """Merge a PR automatically (DISABLED: all PRs require manual review)."""
+        raise RuntimeError(f"SECURITY POLICY: Auto-merge is disabled for all tiers. PR #{pr_number} must be reviewed and merged manually.")
         pat = await _get_github_pat()
         api_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{pr_number}/merge"
         
