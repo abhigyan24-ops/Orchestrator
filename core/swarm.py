@@ -62,10 +62,18 @@ def extract_code_blocks(text: str, default_filename: str = "src/app.js") -> dict
                 ext = ".sql"
             elif "md" in header_lower:
                 ext = ".md"
+            elif "yaml" in header_lower or "yml" in header_lower:
+                ext = ".yml"
 
             if len(files) == 0 and default_filename:
-                base, _ = os.path.splitext(default_filename)
-                filepath = f"{base}{ext}"
+                _, def_ext = os.path.splitext(default_filename)
+                if def_ext in (".yml", ".yaml") and not any(k in header_lower for k in ("python", "html", "css", "sql", "ts", "json")):
+                    filepath = default_filename
+                elif def_ext and any(k in header_lower for k in ("html", "css", "python", "py", "sql", "ts", "json")):
+                    base, _ = os.path.splitext(default_filename)
+                    filepath = f"{base}{ext}"
+                else:
+                    filepath = default_filename
             else:
                 filepath = f"src/file_{len(files) + 1}{ext}"
 
