@@ -63,10 +63,10 @@ async def mark_credential_exhausted(
 
 
 async def rotate_credential(
-    tool_name: str, conn: Optional[Connection] = None
+    tool_name: str, conn: Optional[Connection] = None, user_id: str = "owner"
 ) -> Optional[ApiCredential]:
     """Find the next available credential for a tool, and return it.
     Returns None if all credentials for this tool are exhausted.
     (This is essentially an alias for get_next_credential but explicitly for the rotation flow).
     """
-    return await get_next_credential(tool_name, conn)
+    return await get_next_credential(tool_name, conn, user_id=user_id)
