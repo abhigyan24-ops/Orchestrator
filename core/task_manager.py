@@ -353,7 +353,7 @@ async def _swarm_worker_loop():
     while _swarm_running:
         try:
             async with get_connection() as c:
-                row = await c.fetchrow("SELECT id FROM tasks WHERE status = 'ready' ORDER BY created_at ASC LIMIT 1")
+                row = await c.fetchrow("SELECT id FROM tasks WHERE status = 'ready' AND repo_url IS NOT NULL ORDER BY created_at ASC LIMIT 1")
                 if row:
                     task_id = row['id']
                     # Yield back to the event loop so we don't block

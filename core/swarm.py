@@ -6,32 +6,77 @@ from core.task_manager import update_task_status
 from core.pm_llm import _call_pm_llm
 from core.git_agent import GitAgent
 
-def extract_code_blocks(text: str) -> dict[str, str]:
+def extract_code_blocks(text: str, default_filename: str = "src/app.js") -> dict[str, str]:
     """
     Extract file paths and code blocks from LLM markdown output.
-    Expects format:
-    ```filename.py
-    print('hello')
-    ```
+    Handles varied LLM formatting (spaces in header, language tags, colon syntax, inline comments).
     """
     files = {}
-    # Regex to find ```filepath\ncode...```
-    pattern = r"```([a-zA-Z0-9_\-\./\\]+)\n(.*?)```"
-    matches = re.finditer(pattern, text, re.DOTALL)
+    pattern = r"```([^\n]*)\n(.*?)```"
+    matches = list(re.finditer(pattern, text, re.DOTALL))
+    
     for match in matches:
-        filepath = match.group(1).strip()
+        header = match.group(1).strip()
         code = match.group(2)
-        # Skip shell commands
-        if filepath.lower() in ("bash", "sh", "shell", "console", "terminal", "powershell", "cmd"):
-            continue
-        # some models output ```python filepath
-        if filepath.startswith(("python", "js", "ts", "html", "css", "sql")):
-            parts = filepath.split()
-            if len(parts) > 1:
-                filepath = parts[1]
+        header_lower = header.lower()
+        
+        # If header is purely a shell command tag with shell code, skip it
+        if header_lower in ("bash", "sh", "shell", "console", "terminal", "powershell", "cmd"):
+            lines = [l.strip() for l in code.strip().split('\n') if l.strip()]
+            if all(l.startswith(("npm ", "npx ", "pip ", "yarn ", "git ", "cd ", "mkdir ", "node ", "#", "//", "$ ")) for l in lines):
+                continue
+
+        filepath = ""
+        # 1. Check if header has a path (e.g. 'javascript tests/task.test.js' or 'src/main.py' or 'js:src/test.js')
+        tokens = header.replace(":", " ").replace("=", " ").replace('"', '').replace("'", "").split()
+        for tok in tokens:
+            if "/" in tok or "\\" in tok or ("." in tok and not tok.startswith(".")):
+                filepath = tok
+                break
+        
+        # 2. Check if first line of code specifies filepath (e.g. '// tests/task.test.js')
+        if not filepath and code:
+            first_line = code.strip().split('\n')[0].strip()
+            if first_line.startswith(("//", "#", "/*", "<!--")):
+                for tok in first_line.split():
+                    if ("/" in tok or "." in tok) and not tok.startswith(("http", "www")):
+                        cleaned = tok.strip("/*#<!- '\"")
+                        if "." in cleaned and not cleaned.startswith("."):
+                            filepath = cleaned
+                            break
+
+        # 3. If still no filepath, synthesize an appropriate filename based on language or default
+        if not filepath:
+            ext = ".js"
+            if "html" in header_lower:
+                ext = ".html"
+            elif "css" in header_lower:
+                ext = ".css"
+            elif "python" in header_lower or "py" in header_lower:
+                ext = ".py"
+            elif "json" in header_lower:
+                ext = ".json"
+            elif "ts" in header_lower:
+                ext = ".ts"
+            elif "sql" in header_lower:
+                ext = ".sql"
+            elif "md" in header_lower:
+                ext = ".md"
+
+            if len(files) == 0 and default_filename:
+                base, _ = os.path.splitext(default_filename)
+                filepath = f"{base}{ext}"
             else:
-                filepath = f"new_file_{len(files)}.txt"
+                filepath = f"src/file_{len(files) + 1}{ext}"
+
         files[filepath] = code
+
+    # Fallback: if no code blocks found at all, but raw text looks like code, save to default_filename
+    if not files and text.strip():
+        code_indicators = ["function ", "const ", "let ", "var ", "import ", "export ", "class ", "describe(", "test(", "assert", "<!DOCTYPE", "<html>", "def "]
+        if any(ind in text for ind in code_indicators):
+            files[default_filename] = text.strip()
+
     return files
 
 async def execute_task_with_swarm(task_id: int):
@@ -60,17 +105,28 @@ async def execute_task_with_swarm(task_id: int):
         await update_task_status(task_id, TaskStatus.FAILED, assigned_agent="Swarm Error")
         return
 
+    category = task.get('category', '').lower()
+    default_name = "src/app.js"
+    if category == "testing":
+        default_name = "tests/task.test.js"
+    elif category == "boilerplate":
+        default_name = "index.html"
+    elif category in ("frontend", "ui"):
+        default_name = "src/app.js"
+    elif category == "css":
+        default_name = "src/style.css"
+    elif category in ("infra", "devops"):
+        default_name = ".github/workflows/deploy.yml"
+
     # 2. Worker Agent LLM Call
     system_prompt = f"""You are an elite Autonomous AI Developer specializing in {task['category']} tasks.
-Your job is to read the task description and write ALL the necessary code to fulfill the acceptance criteria.
+Your job is to read the task description and write ALL the necessary implementation code to fulfill the acceptance criteria.
 
-Output your code using standard markdown code blocks, but place the EXACT FILEPATH on the first line after the backticks.
-Example:
-```src/main.py
-print("Hello World")
-```
-
-Write all the files needed to complete this task."""
+CRITICAL INSTRUCTIONS:
+- You MUST output the actual runnable code inside standard markdown code blocks.
+- Place the relative file path on the first line after the backticks (e.g. ```{default_name}).
+- Do NOT output bash command snippets or setup advice like 'npm install'. Write the actual source file code.
+- Write all files needed to complete this task."""
 
     user_prompt = f"""Project ID: {project_id}
 Task: {title}
@@ -91,7 +147,7 @@ Please write the code for this task:"""
     
     try:
         raw_code_response = _call_pm_llm(messages)
-        files_to_write = extract_code_blocks(raw_code_response)
+        files_to_write = extract_code_blocks(raw_code_response, default_filename=default_name)
         
         if not files_to_write:
             raise ValueError("LLM returned no code blocks.")

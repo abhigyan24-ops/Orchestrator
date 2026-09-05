@@ -190,7 +190,7 @@ async def retry_failed_tasks():
     """Reset any failed tasks to ready so the swarm can re-process them."""
     async with get_connection() as conn:
         res = await conn.execute(
-            "UPDATE tasks SET status = 'ready', assigned_tool = NULL WHERE status = 'failed'"
+            "UPDATE tasks SET status = 'ready', assigned_tool = NULL WHERE status = 'failed' AND repo_url IS NOT NULL"
         )
         return {"status": "success", "message": res}
 
