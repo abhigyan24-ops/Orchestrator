@@ -61,10 +61,22 @@ class GitAgent:
             subprocess.run(["git", "checkout", "-b", "main"], cwd=self.working_dir, check=False)
             subprocess.run(["git", "push", "-u", "origin", "main"], cwd=self.working_dir, check=False)
 
-    def create_branch(self, branch_name: str):
-        """Create and checkout a new branch (or reset if it already exists)."""
-        print(f"GitAgent: Creating branch {branch_name}...")
-        subprocess.run(["git", "checkout", "-B", branch_name], cwd=self.working_dir, check=True)
+        # Attempt to set default branch to 'main' on GitHub via REST API
+        try:
+            repo_url = f"https://api.github.com/repos/{self.owner}/{self.repo}"
+            headers = {"Authorization": f"token {pat}", "Accept": "application/vnd.github.v3+json"}
+            async with aiohttp.ClientSession() as session:
+                await session.patch(repo_url, headers=headers, json={"default_branch": "main"})
+        except Exception:
+            pass
+
+        subprocess.run(["git", "checkout", "-B", "main", "origin/main"], cwd=self.working_dir, check=False)
+
+    def create_branch(self, branch_name: str, base_branch: str = "main"):
+        """Create and checkout a new branch strictly reset from origin/main."""
+        print(f"GitAgent: Creating branch {branch_name} from origin/{base_branch}...")
+        subprocess.run(["git", "fetch", "origin", base_branch], cwd=self.working_dir, check=False)
+        subprocess.run(["git", "checkout", "-B", branch_name, f"origin/{base_branch}"], cwd=self.working_dir, check=True)
 
     def commit_changes(self, message: str):
         """Add all changes and commit."""

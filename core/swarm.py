@@ -21,6 +21,9 @@ def extract_code_blocks(text: str) -> dict[str, str]:
     for match in matches:
         filepath = match.group(1).strip()
         code = match.group(2)
+        # Skip shell commands
+        if filepath.lower() in ("bash", "sh", "shell", "console", "terminal", "powershell", "cmd"):
+            continue
         # some models output ```python filepath
         if filepath.startswith(("python", "js", "ts", "html", "css", "sql")):
             parts = filepath.split()
@@ -103,13 +106,13 @@ Please write the code for this task:"""
         if not os.path.exists(workspace_dir):
             await devops.clone_repo()
         else:
-            subprocess.run(["git", "fetch", "origin"], cwd=workspace_dir, check=False)
-            subprocess.run(["git", "checkout", "-f", "main"], cwd=workspace_dir, check=False)
+            subprocess.run(["git", "fetch", "origin", "main"], cwd=workspace_dir, check=False)
             subprocess.run(["git", "clean", "-fd"], cwd=workspace_dir, check=False)
+            subprocess.run(["git", "checkout", "-f", "-B", "main", "origin/main"], cwd=workspace_dir, check=False)
             subprocess.run(["git", "pull", "origin", "main"], cwd=workspace_dir, check=False)
             
         branch_name = f"feature/task-{task_id}-{title.lower().replace(' ', '-')}"
-        devops.create_branch(branch_name)
+        devops.create_branch(branch_name, "main")
         
         # Write files
         for filepath, code in files_to_write.items():
