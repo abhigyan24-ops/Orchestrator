@@ -66,8 +66,8 @@ The Orchestrator features an autonomous multi-agent swarm (PM Agent, Worker Agen
 ### Option A: Cloud-First Production with Local Dev Convenience
 - **Render / Production Service:** Runs 100% autonomously in the cloud using a free-tier cloud fallback chain:
   1. **Groq:** `FALLBACK_PM_KEY` (e.g., `groq/openai/gpt-oss-20b` or Llama 3 models)
-  2. **Google Gemini:** `GEMINI_API_KEY` (e.g., `gemini/gemini-2.0-flash` via Google AI Studio)
-  3. **OpenRouter:** `OPENROUTER_API_KEY` (open-source / free router models)
+  2. **Google Gemini:** `GEMINI_API_KEY` (e.g., `gemini/gemini-3.8-flash` via Google AI Studio)
+  3. **OpenRouter:** `OPENROUTER_API_KEY` (guaranteed free tier `openrouter/meta-llama/llama-3.3-70b-instruct:free`)
   *Zero tunnels, zero local dependencies, and zero reliance on local machine uptime.*
 - **Local Development Override:** For developers running local models (e.g., Ollama), set `PRIMARY_PM_URL=http://localhost:11434/v1` in your local `.env`. When set locally, the system attempts the local model first; if unreachable or unset, it immediately cascades to the cloud chain.
 

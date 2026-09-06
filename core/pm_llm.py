@@ -33,10 +33,10 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
     groq_model = (os.environ.get("FALLBACK_PM_MODEL") or "groq/openai/gpt-oss-20b").strip()
 
     gemini_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
-    gemini_model = (os.environ.get("GEMINI_PM_MODEL") or "gemini/gemini-2.0-flash").strip()
+    gemini_model = (os.environ.get("GEMINI_PM_MODEL") or "gemini/gemini-3.8-flash").strip()
 
     openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
-    openrouter_model = (os.environ.get("OPENROUTER_PM_MODEL") or "openrouter/auto").strip()
+    openrouter_model = (os.environ.get("OPENROUTER_PM_MODEL") or "openrouter/meta-llama/llama-3.3-70b-instruct:free").strip()
 
     kwargs = {"messages": messages}
     if require_json:
