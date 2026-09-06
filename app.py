@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+import asyncio
 from fastmcp.utilities.lifespan import combine_lifespans
 import uvicorn
 
@@ -12,6 +13,7 @@ from mcp_server.server import mcp
 from api.routes import router as api_router
 from api.dashboard import router as dashboard_router
 from db.connection import init_pool, close_pool
+from core.pm_llm import check_openrouter_health
 
 load_dotenv()
 
@@ -24,7 +26,7 @@ mcp_app = mcp.http_app(path="/mcp", transport="streamable-http")
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    """Lifecycle hook for FastAPI to manage the DB connection pool."""
+    """Lifecycle hook for FastAPI to manage the DB connection pool and startup checks."""
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         raise RuntimeError("DATABASE_URL environment variable must be set")
@@ -32,6 +34,9 @@ async def app_lifespan(app: FastAPI):
     print(f"Connecting to database at {db_url.split('@')[-1]}...")
     await init_pool(db_url)
     print("Database connected.")
+
+    # Startup health check: Verify configured OpenRouter free models in background
+    asyncio.create_task(check_openrouter_health())
 
     yield
 

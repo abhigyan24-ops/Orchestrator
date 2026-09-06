@@ -20,11 +20,34 @@ litellm.telemetry = False
 #     Priority 3: OpenRouter Free Tier (via OPENROUTER_API_KEY)
 # ==============================================================================
 
-def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
+import asyncio
+import logging
+from typing import Optional, Union, Tuple
+
+# Logger
+logger = logging.getLogger("orchestrator.pm_llm")
+
+def _normalize_openrouter_model(model_name: Optional[str], default_model: str) -> str:
+    """Ensures model names for OpenRouter include the openrouter/ prefix for litellm."""
+    val = (model_name or "").strip()
+    if not val:
+        val = default_model
+    if not val.startswith("openrouter/"):
+        val = f"openrouter/{val}"
+    return val
+
+def _call_pm_llm(
+    messages: list[dict],
+    require_json: bool = False,
+    is_sentinel: bool = False,
+    exclude_provider: Optional[str] = None,
+    return_metadata: bool = False
+) -> Union[str, Tuple[str, str, str]]:
     """
-    Calls the PM/Worker/QA LLM using a cloud-first fallback chain.
+    Calls the PM/Worker/QA/Sentinel LLM using a cloud-first fallback chain.
     If PRIMARY_PM_URL is provided (local dev), it attempts it first.
     Otherwise, it immediately falls through to the free-tier cloud chain.
+    Supports provider exclusion for cross-model review and separate models for Worker vs Sentinel.
     """
     primary_url = (os.environ.get("PRIMARY_PM_URL") or "").strip()
     primary_model = (os.environ.get("PRIMARY_PM_MODEL") or "openai/llama3.1").strip()
@@ -36,14 +59,26 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
     gemini_model = (os.environ.get("GEMINI_PM_MODEL") or "gemini/gemini-3.8-flash").strip()
 
     openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
-    openrouter_model = (os.environ.get("OPENROUTER_PM_MODEL") or "openrouter/meta-llama/llama-3.3-70b-instruct:free").strip()
+    
+    # Separate Worker fallback and Sentinel review models on OpenRouter
+    openrouter_worker_model = _normalize_openrouter_model(
+        os.environ.get("OPENROUTER_PM_MODEL"),
+        "openrouter/qwen/qwen3-coder:free"
+    )
+    openrouter_sentinel_model = _normalize_openrouter_model(
+        os.environ.get("OPENROUTER_SENTINEL_MODEL"),
+        "openrouter/deepseek/deepseek-r1-distill:free"
+    )
+    openrouter_model = openrouter_sentinel_model if is_sentinel else openrouter_worker_model
+
+    excluded = (exclude_provider or "").strip().lower()
 
     kwargs = {"messages": messages}
     if require_json:
         kwargs["response_format"] = {"type": "json_object"}
 
     # 1. Local Developer Convenience (Only attempted if explicitly configured in local .env)
-    if primary_url:
+    if primary_url and excluded not in ("ollama", "local", "primary"):
         try:
             print(f"PM LLM: Attempting Local Dev Provider ({primary_model} at {primary_url})")
             model_name = primary_model if primary_model.startswith("openai/") else f"openai/{primary_model}"
@@ -54,7 +89,8 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
                 timeout=15,
                 **kwargs
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            return (content, "ollama", primary_model) if return_metadata else content
         except Exception as e:
             print(f"PM LLM: Local dev provider unavailable or bypassed ({e}). Falling through to cloud chain...")
 
@@ -62,7 +98,7 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
     errors = []
 
     # Priority 1: Groq
-    if groq_key:
+    if groq_key and excluded != "groq":
         try:
             print(f"PM LLM: Calling Cloud Provider 1: Groq ({groq_model})")
             os.environ["GROQ_API_KEY"] = groq_key
@@ -71,13 +107,14 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
                 api_key=groq_key,
                 **kwargs
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            return (content, "groq", groq_model) if return_metadata else content
         except Exception as e:
             print(f"PM LLM: Groq failed ({e}). Proceeding to next cloud fallback...")
             errors.append(f"Groq: {e}")
 
     # Priority 2: Google Gemini (AI Studio)
-    if gemini_key:
+    if gemini_key and excluded not in ("gemini", "google"):
         try:
             print(f"PM LLM: Calling Cloud Provider 2: Google Gemini ({gemini_model})")
             os.environ["GEMINI_API_KEY"] = gemini_key
@@ -86,28 +123,92 @@ def _call_pm_llm(messages: list[dict], require_json: bool = False) -> str:
                 api_key=gemini_key,
                 **kwargs
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            return (content, "gemini", gemini_model) if return_metadata else content
         except Exception as e:
             print(f"PM LLM: Gemini failed ({e}). Proceeding to next cloud fallback...")
             errors.append(f"Gemini: {e}")
 
-    # Priority 3: OpenRouter Free Tier
-    if openrouter_key:
+    # Priority 3: OpenRouter Free Tier (Worker: qwen3-coder:free | Sentinel: deepseek-r1-distill:free)
+    if openrouter_key and excluded != "openrouter":
         try:
-            print(f"PM LLM: Calling Cloud Provider 3: OpenRouter ({openrouter_model})")
+            role_label = "Sentinel Reviewer" if is_sentinel else "Worker Fallback"
+            print(f"PM LLM: Calling Cloud Provider 3: OpenRouter [{role_label}] ({openrouter_model})")
             os.environ["OPENROUTER_API_KEY"] = openrouter_key
             response = litellm.completion(
                 model=openrouter_model,
                 api_key=openrouter_key,
                 **kwargs
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            return (content, "openrouter", openrouter_model) if return_metadata else content
         except Exception as e:
             print(f"PM LLM: OpenRouter failed ({e}).")
-            errors.append(f"OpenRouter: {e}")
+            errors.append(f"OpenRouter ({openrouter_model}): {e}")
 
-    err_details = "; ".join(errors) if errors else "No cloud provider keys configured (set FALLBACK_PM_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY)."
+    err_details = "; ".join(errors) if errors else "No active or unexcluded cloud provider keys configured."
     raise RuntimeError(f"PM LLM Cloud Fallback Chain Exhausted: {err_details}")
+
+
+async def check_openrouter_health() -> dict:
+    """
+    Startup health check for OpenRouter configured models.
+    Calls whichever OpenRouter models are configured (Worker & Sentinel)
+    and logs a loud, prominent warning (not a silent failure) if it returns
+    a 'model not found', 404, or deprecation error.
+    """
+    openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    if not openrouter_key:
+        print("[OPENROUTER HEALTH-CHECK] OPENROUTER_API_KEY is not configured. Skipping OpenRouter model verification.")
+        return {"status": "skipped", "reason": "No API key configured"}
+
+    worker_model = _normalize_openrouter_model(
+        os.environ.get("OPENROUTER_PM_MODEL"),
+        "openrouter/qwen/qwen3-coder:free"
+    )
+    sentinel_model = _normalize_openrouter_model(
+        os.environ.get("OPENROUTER_SENTINEL_MODEL"),
+        "openrouter/deepseek/deepseek-r1-distill:free"
+    )
+
+    models_to_check = [
+        ("Worker Fallback", worker_model, "OPENROUTER_PM_MODEL"),
+        ("Sentinel Reviewer", sentinel_model, "OPENROUTER_SENTINEL_MODEL"),
+    ]
+
+    results = {}
+    for role_name, model_name, env_var_name in models_to_check:
+        try:
+            print(f"[OPENROUTER HEALTH-CHECK] Verifying {role_name} model: '{model_name}'...")
+            # Run test completion in thread to avoid blocking asyncio event loop
+            await asyncio.to_thread(
+                litellm.completion,
+                model=model_name,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+                api_key=openrouter_key,
+                timeout=12
+            )
+            print(f"[OPENROUTER HEALTH-CHECK] [OK] {role_name} model '{model_name}' is verified and reachable.")
+            results[model_name] = {"status": "ok"}
+        except Exception as e:
+            err_str = str(e)
+            results[model_name] = {"status": "error", "error": err_str}
+            banner = (
+                "\n"
+                + "!" * 80 + "\n"
+                + f"[OPENROUTER WARNING] {role_name.upper()} MODEL FAILED HEALTH CHECK!\n"
+                + f"Configured Model: {model_name} (via {env_var_name})\n"
+                + f"Reported Error: {err_str}\n\n"
+                + "CRITICAL NOTICE: Free-tier model IDs on OpenRouter change, rotate, or deprecate frequently.\n"
+                + f"Please verify active free models at: https://openrouter.ai/models?max_price=0\n"
+                + f"and update {env_var_name} in your environment variables or Render dashboard.\n"
+                + "!" * 80 + "\n"
+            )
+            print(banner, flush=True)
+            logging.getLogger("uvicorn.error").warning(banner)
+
+    return results
 
 def decompose_feature(project_id: str, feature_description: str, project_context: str) -> list[dict]:
     """
